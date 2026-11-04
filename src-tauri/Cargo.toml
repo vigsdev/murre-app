@@ -1,6 +1,6 @@
 [package]
 name = "murre"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local-first workflow manager for After Effects projects"
 edition = "2024"
 
