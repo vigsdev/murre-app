@@ -10,7 +10,7 @@ const comp = (id: number, name: string, usedIn = 1): ScannedComp => ({ id, name,
 
 function host(aep: string | null, comps: ScannedComp[] = [comp(1, "Main"), comp(2, "Pre")], over: Partial<ScanHost> = {}): ScanHost & { calls: string[] } {
   const calls: string[] = [];
-  const info = (): AepInfo => ({ saved: aep !== null, name: aep ? aep.split("/").pop()! : null, path: aep, appVersion: "25.0", numItems: comps.length });
+  const info = (): AepInfo => ({ saved: aep !== null, name: aep ? aep.split(/[\\/]/).pop()! : null, path: aep, appVersion: "25.0", numItems: comps.length });
   return {
     calls,
     getAepInfo: async () => info(),
