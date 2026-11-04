@@ -23,7 +23,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -243,7 +243,7 @@ impl Runner {
             .join(" ");
         let _ = writeln!(file, "Murre render log\nStarted (unix time): {started}\nCommand: {cmd_line}\n");
 
-        let mut cmd = Command::new(aerender);
+        let mut cmd = crate::platform::command(aerender);
         cmd.args(&plan.args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(unix)]
         {
@@ -473,7 +473,7 @@ fn terminate(pid: u32, force: bool) {
     }
     #[cfg(not(unix))]
     {
-        let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/T"]).args(if force { vec!["/F"] } else { vec![] }).status();
+        let _ = crate::platform::command("taskkill").args(["/PID", &pid.to_string(), "/T"]).args(if force { vec!["/F"] } else { vec![] }).status();
     }
 }
 

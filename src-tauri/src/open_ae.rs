@@ -11,7 +11,6 @@ use crate::project::invalid;
 use crate::workfiles::{Workfile, WorkfileScan};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Which file "Open in After Effects" opens when none is named: the one marked as current (if it still
 /// exists), else the highest version, else the most recently changed.
@@ -79,7 +78,7 @@ pub fn is_running() -> bool {
     if !cfg!(target_os = "macos") {
         return false;
     }
-    match Command::new("ps").args(["-axo", "command="]).output() {
+    match crate::platform::command("ps").args(["-axo", "command="]).output() {
         Ok(out) => String::from_utf8_lossy(&out.stdout).lines().any(is_ae_process),
         Err(_) => false,
     }
@@ -88,9 +87,9 @@ pub fn is_running() -> bool {
 /// Start After Effects (or bring it forward) without opening a file.
 pub fn launch(app: &Path) -> AppResult<()> {
     if !cfg!(target_os = "macos") {
-        return invalid("Opening After Effects is only supported on macOS.");
+        return invalid(format!("Opening After Effects from Murre isn’t available on {} yet.", crate::platform::OS_NAME));
     }
-    let status = Command::new("open").arg("-a").arg(app).status().map_err(|e| AppError::io(app, e))?;
+    let status = crate::platform::command("open").arg("-a").arg(app).status().map_err(|e| AppError::io(app, e))?;
     if status.success() {
         Ok(())
     } else {
@@ -110,10 +109,10 @@ fn check_aep(root: &Path, rel: &str) -> AppResult<PathBuf> {
 /// Open `rel` (a path inside `root`) in `app`, or with the system default when `app` is `None`.
 pub fn open(root: &Path, rel: &str, app: Option<&Path>) -> AppResult<()> {
     if !cfg!(target_os = "macos") {
-        return invalid("Opening in After Effects is only supported on macOS.");
+        return invalid(format!("Opening projects in After Effects from Murre isn’t available on {} yet.", crate::platform::OS_NAME));
     }
     let target = check_aep(root, rel)?;
-    let mut cmd = Command::new("open");
+    let mut cmd = crate::platform::command("open");
     if let Some(app) = app {
         cmd.arg("-a").arg(app);
     }

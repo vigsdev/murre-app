@@ -219,7 +219,7 @@ impl Walk<'_> {
 }
 
 pub fn list(root: &Path) -> AppResult<RendersListing> {
-    let canon_root = fs::canonicalize(root).map_err(|e| AppError::io(root, e))?;
+    let canon_root = crate::platform::canonicalize(root).map_err(|e| AppError::io(root, e))?;
     let file = load(root)?;
     let mut walk = Walk {
         canon_root: &canon_root,
@@ -331,7 +331,7 @@ pub struct MediaTools {
 /// True when the program starts and answers `-version`. The stand-ins that a checkout without the real tools gets
 /// exit with an error, so they count as "not there".
 fn runs(path: &Path) -> bool {
-    Command::new(path)
+    crate::platform::command(path)
         .arg("-version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -350,32 +350,35 @@ fn bundled_tool(name: &str) -> Option<PathBuf> {
         _ => return None,
     };
     cell.get_or_init(|| {
-        let path = std::env::current_exe().ok()?.parent()?.join(name);
+        let path = std::env::current_exe().ok()?.parent()?.join(crate::platform::exe_name(name));
         runs(&path).then_some(path)
     })
     .clone()
 }
 
+/// What to say when neither Murre's own copy nor an installed FFmpeg can be started.
+fn missing_tool_message(tool: &str) -> String {
+    let install = if cfg!(windows) { "install FFmpeg and add it to PATH" } else { "install FFmpeg yourself (brew install ffmpeg)" };
+    format!("Murre’s media tool ({tool}) wouldn’t start. Reinstall Murre, or {install}.")
+}
+
 /// The tool Murre ships with first, so nothing has to be installed. Failing that, GUI apps on macOS do not inherit
-/// the shell PATH, so well-known install locations are checked (Homebrew, MacPorts), then PATH.
+/// the shell PATH, so well-known install locations are checked (Homebrew, MacPorts), then PATH. Windows: PATH only.
 pub fn find_tool(name: &str) -> Option<PathBuf> {
     if let Some(p) = bundled_tool(name) {
         return Some(p);
     }
-    let mut dirs: Vec<PathBuf> = [
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/opt/local/bin",
-        "/usr/bin",
-    ]
-    .iter()
-    .map(PathBuf::from)
-    .collect();
+    let file = crate::platform::exe_name(name);
+    let mut dirs: Vec<PathBuf> = if cfg!(windows) {
+        Vec::new()
+    } else {
+        ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin"].iter().map(PathBuf::from).collect()
+    };
     if let Some(path) = std::env::var_os("PATH") {
         dirs.extend(std::env::split_paths(&path));
     }
     dirs.into_iter()
-        .map(|d| d.join(name))
+        .map(|d| d.join(&file))
         .find(|p| fs::metadata(p).is_ok_and(|m| m.is_file()))
 }
 
@@ -544,9 +547,9 @@ pub fn parse_probe(json: &[u8]) -> AppResult<MediaInfo> {
 pub fn probe(root: &Path, rel: &str) -> AppResult<MediaInfo> {
     let (_, abs, _) = resolve_media(root, rel)?;
     let tool = find_tool("ffprobe").ok_or_else(|| {
-        AppError::Invalid("Murre’s media tool (ffprobe) wouldn’t start. Reinstall Murre, or install FFmpeg yourself (brew install ffmpeg).".into())
+        AppError::Invalid(missing_tool_message("ffprobe"))
     })?;
-    let mut cmd = Command::new(tool);
+    let mut cmd = crate::platform::command(tool);
     cmd.args([
         "-v",
         "error",
@@ -579,7 +582,7 @@ fn data_url(path: &Path) -> AppResult<String> {
 }
 
 fn run_ffmpeg_thumb(ffmpeg: &Path, abs: &Path, out: &Path, seek: bool) -> bool {
-    let mut cmd = Command::new(ffmpeg);
+    let mut cmd = crate::platform::command(ffmpeg);
     cmd.args(["-nostdin", "-v", "error", "-y"]);
     if seek {
         cmd.args(["-ss", "1"]);
@@ -614,10 +617,7 @@ pub fn thumbnail(root: &Path, cache_dir: &Path, rel: &str) -> AppResult<Option<S
         return data_url(&cached).map(Some);
     }
     let ffmpeg = find_tool("ffmpeg").ok_or_else(|| {
-        AppError::Invalid(
-            "Murre’s media tool (ffmpeg) wouldn’t start. Reinstall Murre, or install FFmpeg yourself (brew install ffmpeg)."
-                .into(),
-        )
+        AppError::Invalid(missing_tool_message("ffmpeg"))
     })?;
     fs::create_dir_all(cache_dir).map_err(|e| AppError::io(cache_dir, e))?;
     let tmp = cached.with_extension(format!("{}.part", std::process::id()));
@@ -641,7 +641,7 @@ pub fn playback_path(root: &Path, rel: &str) -> AppResult<PathBuf> {
     if kind == MediaKind::Image {
         return invalid("That’s an image. Nothing to play, but you can admire it.");
     }
-    fs::canonicalize(&abs).map_err(|e| AppError::io(&abs, e))
+    crate::platform::canonicalize(&abs).map_err(|e| AppError::io(&abs, e))
 }
 
 #[cfg(test)]
@@ -841,7 +841,8 @@ mod tests {
     }
 
     fn have_ffmpeg() -> bool {
-        find_tool("ffmpeg").is_some() && find_tool("ffprobe").is_some()
+        // Found and actually starts (a stand-in or a broken copy on PATH counts as not installed).
+        ["ffmpeg", "ffprobe"].iter().all(|t| find_tool(t).is_some_and(|p| runs(&p)))
     }
 
     fn make_clip(path: &Path, secs: &str) {

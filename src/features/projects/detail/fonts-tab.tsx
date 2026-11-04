@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useFontPreviews } from "@/lib/preferences"
 import { api, errorMessage, type FontEntry, type FontsView } from "@/lib/tauri"
 import { UsageRow } from "./usage"
+import { showInFileBrowser, thisComputer } from "@/lib/platform"
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; view: FontsView }
 
@@ -66,7 +67,7 @@ function FontPreview({ font }: { font: FontEntry }) {
     }
   }, [font.postScriptName])
   if (family === undefined) return <div className="h-8" aria-hidden />
-  if (family === null) return <p className="text-xs text-muted-foreground">No preview: this font isn’t installed on this Mac.</p>
+  if (family === null) return <p className="text-xs text-muted-foreground">No preview: this font isn’t installed on {thisComputer}.</p>
   return (
     <p className="line-clamp-2 break-words text-2xl leading-snug" style={{ fontFamily: family }} data-testid="font-preview">
       {SAMPLE}
@@ -93,7 +94,7 @@ function FontCard({ projectId, font }: { projectId: string; font: FontEntry }) {
         <div className="flex flex-wrap items-center gap-1.5">
           {font.adobeFonts && <Badge variant="secondary">Adobe Fonts</Badge>}
           {font.missing && <Badge variant="destructive">Missing when scanned</Badge>}
-          {font.installed === false && <Badge variant="outline">Not on this Mac</Badge>}
+          {font.installed === false && <Badge variant="outline">Not on {thisComputer}</Badge>}
         </div>
       </div>
       {previews && <FontPreview font={font} />}
@@ -114,7 +115,7 @@ function FontCard({ projectId, font }: { projectId: string; font: FontEntry }) {
             size="xs"
             onClick={() => void revealItemInDir(font.location!).catch((e) => toast.error(errorMessage(e)))}
           >
-            <FolderSearch /> Show in Finder
+            <FolderSearch /> {showInFileBrowser}
           </Button>
         )}
       </div>

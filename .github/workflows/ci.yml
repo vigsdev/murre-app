@@ -1,0 +1,67 @@
+# Checks every push and pull request on macOS and Windows. Makes nothing to download and never releases.
+name: CI
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install app packages
+        run: npm ci
+
+      - name: Type-check the app
+        run: npx tsc --noEmit
+
+      # Also makes dist/, which the Rust build embeds.
+      - name: Build the app's pages
+        run: npm run build
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: Install Companion packages
+        working-directory: murre-ae
+        run: yarn install --frozen-lockfile
+
+      # The same check its build runs (the panel code; ExtendScript in src/jsx is compiled separately by Vite).
+      - name: Type-check the Companion
+        working-directory: murre-ae
+        run: npx tsc -p tsconfig-build.json --noEmit
+
+      - name: Companion tests
+        working-directory: murre-ae
+        run: yarn test

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { api, type NeedsView } from "@/lib/tauri"
+import { thisComputer } from "@/lib/platform"
 
 /** "25.0x1" → "25", for a line people can read. */
 function aeMajor(v: string) {
@@ -65,8 +66,8 @@ export function NeedsCard({ projectId, reloadToken = 0 }: { projectId: string; r
         <CardTitle>What this project needs</CardTitle>
         <CardDescription>
           {problems === 0
-            ? "Everything the last scan found looks available on this Mac."
-            : `${problems} ${problems === 1 ? "thing" : "things"} to check before opening this on this Mac.`}
+            ? `Everything the last scan found looks available on ${thisComputer}.`
+            : `${problems} ${problems === 1 ? "thing" : "things"} to check before opening this on ${thisComputer}.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -96,7 +97,7 @@ export function NeedsCard({ projectId, reloadToken = 0 }: { projectId: string; r
                   <Badge variant={f.state === "ok" || f.state === "adobe" ? "secondary" : "destructive"} title={f.postScriptName}>
                     {(f.state === "missing" || f.state === "notOnMac") && <TriangleAlert />}
                     {f.label}
-                    {f.state === "notOnMac" && " · not on this Mac"}
+                    {f.state === "notOnMac" && ` · not on ${thisComputer}`}
                     {f.state === "missing" && " · was missing"}
                   </Badge>
                 </li>

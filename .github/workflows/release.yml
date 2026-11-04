@@ -1,7 +1,11 @@
-# Builds Murre for Apple Silicon and puts it in a draft GitHub release, with the files the updater reads.
+# Builds Murre for Apple Silicon and Windows (x86_64) and puts both in one draft GitHub release, with the files the
+# updater reads.
 #
 # Starts when a tag like v0.2.0 is pushed. Make the tag with `npm run release -- 0.2.0 "What changed."`
 # (see RELEASING.md). Nobody gets the update until you publish the draft on GitHub.
+#
+# Run it by hand from the Actions tab ("Run workflow") to build both installers without making a release. They are
+# then attached to that run as downloadable files.
 #
 # Needs two repository secrets: TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
 name: Release
@@ -9,21 +13,24 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: macos-latest # Apple Silicon
-    timeout-minutes: 90
+  # One draft release for both builds, made before they start, so two jobs can't each make their own.
+  create-release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.release.outputs.id }}
     steps:
       - uses: actions/checkout@v4
 
       # The tag must match the version inside the app, or the updater would offer the wrong number.
       # Its message becomes the release notes shown in the update dialog.
       - name: Check version and read notes
-        id: meta
         run: |
           tag="${GITHUB_REF_NAME}"
           conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
@@ -37,11 +44,40 @@ jobs:
           fi
           # Checkout drops tag messages, so fetch the tag itself.
           git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
-          {
-            echo "notes<<MURRE_NOTES_END"
-            git for-each-ref "refs/tags/$tag" --format='%(contents)'
-            echo "MURRE_NOTES_END"
-          } >> "$GITHUB_OUTPUT"
+          git for-each-ref "refs/tags/$tag" --format='%(contents)' > "$RUNNER_TEMP/notes.md"
+
+      - name: Make the draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" \
+            -f tag_name="${GITHUB_REF_NAME}" \
+            -f name="Murre ${GITHUB_REF_NAME}" \
+            -f body="$(cat "$RUNNER_TEMP/notes.md")" \
+            -F draft=true -F prerelease=false \
+            --jq .id)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create-release
+    # Runs for a tag once the release exists, and on its own when started by hand.
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.create-release.result == 'success')
+    strategy:
+      fail-fast: false
+      # For a release, one build at a time: each one adds its platform to latest.json on the release, and two at once
+      # could overwrite each other's entry.
+      max-parallel: ${{ github.event_name == 'push' && 1 || 2 }}
+      matrix:
+        include:
+          - os: macos-latest # Apple Silicon
+            name: mac
+          - os: windows-latest # x86_64
+            name: windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -55,7 +91,9 @@ jobs:
           workspaces: src-tauri
 
       # FFmpeg isn't in git. Building it takes a few minutes, so keep the result until the script changes.
+      # Windows has no FFmpeg build yet: its installer ships stand-ins, and the app says its media tool is missing.
       - name: Cache FFmpeg
+        if: matrix.name == 'mac'
         id: ffmpeg-cache
         uses: actions/cache@v4
         with:
@@ -63,7 +101,7 @@ jobs:
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/make-ffmpeg.sh') }}
 
       - name: Build FFmpeg
-        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        if: matrix.name == 'mac' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         run: scripts/make-ffmpeg.sh
 
       - name: Install packages
@@ -77,8 +115,38 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: npm run tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: Murre ${{ github.ref_name }}
-          releaseBody: ${{ steps.meta.outputs.notes }}
+          # Empty when started by hand: tauri-action then only builds, and uploads nothing to a release.
+          releaseId: ${{ needs.create-release.outputs.id }}
+          # Still needed with releaseId, so the updater's download links point at this version's files.
+          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
           releaseDraft: true
           prerelease: false
+          # latest.json's plain "windows-x86_64" entry points at the NSIS installer (.exe), the only Windows bundle.
+          updaterJsonPreferNsis: true
+          uploadWorkflowArtifacts: ${{ github.event_name == 'workflow_dispatch' }}
+
+  # The updater needs both platforms in latest.json. Stops the release here if one is missing.
+  check-release:
+    needs: [create-release, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check latest.json lists both platforms
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.id }}
+        run: |
+          url=$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" --jq '.[] | select(.name == "latest.json") | .url')
+          if [ -z "$url" ]; then
+            echo "::error::The draft release has no latest.json."
+            exit 1
+          fi
+          gh api -H "Accept: application/octet-stream" "$url" > latest.json
+          cat latest.json
+          for p in darwin-aarch64 windows-x86_64; do
+            if ! jq -e --arg p "$p" '.platforms[$p].url and .platforms[$p].signature' latest.json > /dev/null; then
+              echo "::error::latest.json has no $p entry. Re-run the failed build job, then this check."
+              exit 1
+            fi
+          done
+          echo "latest.json lists darwin-aarch64 and windows-x86_64."

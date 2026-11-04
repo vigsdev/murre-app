@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { api, errorMessage, type AerenderInstall } from "@/lib/tauri"
+import { baseName } from "@/lib/platform"
 
 const KEY = "murre.openWithAfterEffects"
 
@@ -38,7 +39,7 @@ function remember(path: string | null) {
  * newest is used instead.
  */
 export async function openProjectInAfterEffects(projectId: string): Promise<void> {
-  const show = (opened: string) => toast.success(`Opening ${opened.split("/").pop()} in After Effects`)
+  const show = (opened: string) => toast.success(`Opening ${baseName(opened)} in After Effects`)
   try {
     show(await api.openInAfterEffects(projectId, null, remembered()))
   } catch (e) {
@@ -88,7 +89,7 @@ export function useOpenInAfterEffects(projectId: string) {
     async (path?: string) => {
       try {
         const opened = await api.openInAfterEffects(projectId, path, choice)
-        toast.success(`Opening ${opened.split("/").pop()} in After Effects`)
+        toast.success(`Opening ${baseName(opened)} in After Effects`)
       } catch (e) {
         toast.error(errorMessage(e))
       }

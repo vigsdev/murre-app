@@ -2,7 +2,11 @@
 
 Status: **plan only, nothing implemented.** Waiting for approval before any code changes.
 
-This is separate from the Apple Silicon release. Nothing here changes how the Mac build behaves unless a step says so.
+Goal: GitHub Actions builds a Windows installer (NSIS `.exe`, x86_64) alongside the existing Apple Silicon build, from one tag, into one draft release. The Mac build keeps working as it does now. Work happens on a branch with a pull request. Nothing is pushed to `main` and no tags are made.
+
+There's no Windows PC with After Effects. GitHub's `windows-latest` runner is the only place the Windows build is compiled, tested and packaged. Throughout this plan:
+- **Verified** means it compiles, its unit tests pass, or it packages, on CI.
+- **Untested** means it still has to be tried with real After Effects on a real PC.
 
 ## Summary
 
@@ -36,9 +40,17 @@ One place for the few Windows details that every other item needs:
 - **Plain paths from `canonicalize`.** On Windows, `std::fs::canonicalize` returns verbatim paths (`\\?\C:\Users\…`). `assets::resolve_inside`, `renders`, `workfiles` and others canonicalize, and some of those paths reach the UI (`absolutePath`), `revealItemInDir`, aerender's `-project`/`-output`, and `.murre` JSON. Many programs, After Effects likely among them, don't accept `\\?\` paths. Use `dunce::canonicalize` (`dunce` 1.0.5 is already in `Cargo.lock` through Tauri, so this adds no new code). It returns the normal form when that form is safe, and is identical to std on macOS.
 - **Program names.** Use `std::env::consts::EXE_SUFFIX` wherever a program is looked up by name (`ffmpeg` → `ffmpeg.exe`).
 
-### 0.2 A Windows CI check that runs on every push (S)
+### 0.2 CI on every push, and a build-only Windows run (S)
 
-Add a `windows-latest` job to a new `ci.yml` (not the release workflow) that runs `cargo check` and `cargo test` for `src-tauri`, plus `npm run build`. This catches Windows breakage without a Windows PC.
+There are two workflows. Neither makes a release.
+
+- **New `ci.yml`**: runs on every push to a branch and on pull requests, as a matrix of `macos-latest` and `windows-latest`. Each job runs:
+  - `cargo test` in `src-tauri`
+  - `npx tsc --noEmit` and `npm run build` for the app
+  - `npx tsc --noEmit` and `npm test` in `murre-ae`
+
+  This is how "`cargo test` and `tsc` still pass on macOS" gets checked, since this work happens in a Linux cloud session, not on a Mac.
+- **`release.yml` gets `workflow_dispatch`**: run by hand from the Actions tab, it builds both installers with the same steps as a release, but doesn't create a release. It uploads them as workflow artifacts to download and try, so the Windows installer can be checked without tagging. Tagged pushes behave as before, plus the Windows job (see 8.1).
 
 Many existing tests are `#[cfg(unix)]` (symlinks, fake `aerender` shell scripts, `libc::kill`), so they skip themselves on Windows. Windows equivalents get added with each item below.
 
@@ -175,12 +187,16 @@ The "developer symlink is never replaced" rule still works on Windows (`symlink_
 
 ### 5.2 Unpacking the signed `.zxp` (S)
 
-`bundled_version()` and `unzip_to()` start `unzip`, which Windows doesn't have. Options:
+`bundled_version()` and `unzip_to()` start `unzip`, which Windows doesn't have. Options considered:
 
 - **`tar.exe`**, which has shipped in `%SystemRoot%\System32` since Windows 10 1803 and reads zip files (`tar -xf pkg.zxp -C dst`, and `tar -xOf pkg.zxp CSXS/manifest.xml` for the version). No new dependency. Call it by absolute path.
 - **The `zip` crate** for all platforms. It adds one dependency and is the more predictable choice if `tar.exe` gives trouble with the ZXP signature files.
 
-Recommendation: `tar.exe` first, tested on a real ZXP. The ZXP itself works on both systems. The signature in it covers the files, not the OS, so **the same `com.murre.cep.zxp` should load on Windows** **(confirm)**.
+**Decision: the `zip` crate, on every system.** It replaces both `unzip` calls with one small Rust function (open the archive, read `CSXS/manifest.xml`, extract every entry). The crate is already in `Cargo.lock` (zip 9.3.0, used by the updater on Windows). Murre would depend on it directly with `default-features = false, features = ["deflate-flate2"]`, which uses the `flate2` Murre already has. No new code enters the build.
+
+The extract must refuse entries that would land outside the target folder (`..` or absolute names). The crate's `enclosed_name()` gives the safe name, and entries without one are skipped and the install fails. That's tested with a hand-made bad archive on all platforms. `tar.exe` is no longer needed.
+
+The ZXP itself works on both systems. The signature in it covers the files, not the OS, so **the same `com.murre.cep.zxp` should load on Windows** **(confirm)**.
 
 ### 5.3 PlayerDebugMode (S)
 
@@ -214,6 +230,8 @@ These use fixed arguments, `%SystemRoot%\System32\reg.exe` by absolute path and 
 - Project-relative paths are already stored with `/` (`workfiles`, `assets`, `renders`, `project-link.ts` `toPosix`), and `safe_components` rejects drive prefixes and root components on Windows (`Component::Prefix`/`RootDir`). Good.
 - The absolute project path lives only in SQLite (per machine), and project identity is the ID in `project.json`. So a project folder on an external drive that moves between a Mac and a PC should be found by `reconcile` as a moved project **(test)**.
 - **Known limit, not fixed by this port:** footage paths inside an AEP, or Premiere project, are absolute for the system that saved them. Today Windows-made projects show "not found" on the Mac (`TESTER-GUIDE.md`, `FROM-CLAUDE.md`). On Windows the reverse happens: Mac-made projects show `/Volumes/…` footage as not found. After Effects relinks these itself when the folder layout matches. Murre should keep reporting them honestly and not try to translate paths. Update the tester guide wording to say "made on another kind of computer".
+- **Absolute paths shown in the UI.** The frontend gets a file's name with `path.split("/").pop()` in `open-in-ae.tsx` (twice), `new-project-page.tsx` and `workfile-timeline.tsx`. On Windows that prints the whole `C:\…` path in the toast. Split on both separators, as `footage-panel.tsx` and `companion-control.tsx` already do. Paths relative to the project (breadcrumbs in `assets-tab.tsx`) always use `/` and stay as they are.
+- **A project made on a Mac, opened on Windows:** project ID, metadata, tasks, notes and references are all relative or path-free, so they open normally. Absolute paths inside `.murre` files written by the Companion (footage locations, font locations) are shown as "not found on this PC" rather than crashing. The existing "not found" states already handle a missing file. Each reader of an absolute path from `.murre` gets a test with a `/Volumes/…` path on Windows, and a `C:\…` path on the Mac.
 - Path length: Rust's std uses long-path forms internally, but After Effects and aerender may not handle paths over 260 characters **(confirm)**. Deep `02 Assets/…` trees from long project names are the likely case. Show a clear error if aerender fails on one.
 
 ### 6.4 Safe writes: `safe_fs.rs` (S, mostly tests)
@@ -225,7 +243,7 @@ These use fixed arguments, `%SystemRoot%\System32\reg.exe` by absolute path and 
 ### 6.5 Fonts and packages: `package.rs`, `fonts.rs` (S)
 
 - "Comes with macOS" checks `location.starts_with("/System/")`. On Windows, the matching check is `%SystemRoot%\Fonts`. Fonts installed by the user live in `%LOCALAPPDATA%\Microsoft\Windows\Fonts` and should be bundled, like user fonts on the Mac.
-- `make_zip`: `ditto` on the Mac, `zip` elsewhere. Windows has no `zip` program. Use `tar.exe -a -c -f out.zip -C <parent> <name>` (bsdtar picks zip from the `.zip` extension), or the `zip` crate if 5.2 chose it. Non-ASCII file names in a zip made by `tar.exe` need a check **(confirm)**.
+- `make_zip`: `ditto` on the Mac, the `zip` program elsewhere. Windows has no `zip` program. **On Windows, use the `zip` crate from 5.2** to write the archive (UTF-8 names, the folder itself as the top level, as `ditto --keepParent` does). **The Mac keeps `ditto`**, which works and is known good, so Mac behaviour doesn't change. The Rust path gets unit tests that run on every CI system, including a non-ASCII file name and a round trip through the reader.
 
 ### 6.6 Watchers (no change, test)
 
@@ -246,7 +264,7 @@ Changes:
 
 `trash.ts` asks Finder through `osascript` and refuses on other systems. Windows options:
 
-- **A. Turn off for the first Windows version (S, recommended).** On Windows, hide or disable the project setting "Move the original files to the Trash after they are copied", and say why. Copy and Relink still work. Originals stay where they are, which is the safer default anyway.
+- **A. Turn off for the first Windows version (S, chosen).** On Windows, the project setting "Move the original files to the Trash after they are copied" is shown switched off and can't be turned on, with a line saying "Not available on Windows yet. Originals stay where they are." `trash.ts` already refuses on non-Mac systems, so a project that has the setting on from a Mac still never deletes anything on Windows. It reports "not moved" instead. Copy and Relink still work. Originals stay where they are, which is the safer default anyway.
 - **B. Later:** a `trash.ps1` shipped inside the signed extension, started as `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File trash.ps1 <paths…>`. `-File` passes the paths as real arguments, never inside the script text. The script calls the .NET `Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(path, OnlyErrorDialogs, SendToRecycleBin)`. Caveat: a company Group Policy can block PowerShell scripts even with `-ExecutionPolicy Bypass`. That fails safely (nothing moved, error shown).
 
 ### 7.2 Path comparison is case-insensitive on Windows (S)
@@ -263,12 +281,13 @@ Changes:
 
 ### 8.1 Workflow (M)
 
-Turn the single job into: a `create-release` job, then a two-entry matrix (`macos-latest` and `windows-latest`), then a `publish` check.
+Turn the single job into: a `create-release` job, then a two-entry build matrix (`macos-latest` for `aarch64-apple-darwin`, `windows-latest` for `x86_64-pc-windows-msvc`), then a check job. On `workflow_dispatch` the create-release and check jobs are skipped, and the matrix uploads artifacts instead (0.2).
 
 - Why a create-release job first: tauri-action's README says that with `releaseId` set, `tagName`/`releaseName` are not used to find the release. Two parallel jobs that each try to create the draft from `tagName` can race and make two drafts. Creating it once and passing `releaseId` (**together with `tagName`**, or the updater URLs point at `releases/latest/download/…`) avoids that.
 - `latest.json`: tauri-action downloads the existing `latest.json` from the release, keeps its `platforms`, adds its own and uploads it again (read in `src/upload-version-json.ts`). So the Mac job writes `darwin-aarch64` and the Windows job adds `windows-x86_64` plus `windows-x86_64-nsis`. Set `updaterJsonPreferNsis: true` (its default is `false` "for legacy reasons"), or build only NSIS, so `windows-x86_64` points at the NSIS installer. The two jobs could still overwrite each other's `latest.json` if they finish at the same moment. Run the jobs with `max-parallel: 1`, or add a final job that checks `latest.json` lists both platforms and fails otherwise.
 - Windows job steps: checkout, Node, Rust (MSVC, the default on `windows-latest`), rust-cache, FFmpeg (MSYS2, cached on `hashFiles('scripts/make-ffmpeg-windows.sh')`), `npm ci`, tauri-action with `--bundles nsis`.
 - The version and notes check is a bash script. Give it `shell: bash` on Windows (Git Bash is on `windows-latest`), or run it only in the create-release job.
+- Updater signatures: the Windows job uses the same `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets. With `createUpdaterArtifacts: true`, the NSIS bundle gets a `.sig` next to the `-setup.exe`, and tauri-action puts that into `latest.json`.
 - The updater on Windows: the plugin's default `installMode` is `passive` (a progress bar, no questions). With `currentUser` NSIS, no administrator prompt is expected. When Murre restarts into the installer, the `flush-before-restart` event has to fire first, as it does on the Mac **(confirm)**.
 
 ### 8.2 SmartScreen without a code-signing certificate (decision for you)
@@ -307,20 +326,33 @@ Update `RELEASING.md` (both platforms, the draft has `Murre_x.y.z_x64-setup.exe`
 
 ## Recommended order
 
-Each step is a separate PR that leaves the Mac build unchanged and is checked by the Windows CI job from step 1.
+The order follows the brief. All of it is on one branch with one pull request. Each step is its own commit (or a few), and after each step:
+- `cargo test`, `npx tsc --noEmit` and the Companion tests pass on the CI macOS job.
+- The CI Windows job is green.
+- I report exactly what passed and what is still untested.
 
-1. **Groundwork** (0.1, 0.2, 1.1, 1.2): platform helper, `dunce`, `.exe` names, Windows CI. *S–M.*
-2. **Window and app shell** (1.4, 1.5, 2.2): `tauri.windows.conf.json`, no menu bar on Windows, `Ctrl+,`, tray icon, wording. *M.*
-3. **Opening files** (2.1 with the expanded blocked list). *S.*
-4. **FFmpeg for Windows** (1.3). *M.* Once this is in, an unsigned installer can come out of CI for a first look.
-5. **After Effects detection, open and launch** (3.1–3.4). *M.*
-6. **Rendering** (4.1–4.4): Job Object cancel. *M.*
-7. **Companion install** (5.1–5.3) and **Companion fixes** (7.1 A, 7.2). *M.*
-8. **Paths and reliability** (6.1, 6.2, 6.4, 6.5). *M.* 6.2 and the exFAT fallback in 6.4 also fix Mac-side problems, so they could go earlier.
-9. **Release pipeline** (8.1, 8.3), then a test release as a draft. *M.*
-10. **Test pass on a Windows PC with After Effects** using the table above, then fix what it finds. Only then publish a Windows build to testers.
+**(a) Compiles and packages on Windows, Mac-only features switched off with clear messages.** *M.*
+- 0.1 platform helper (no console windows, `dunce`, `.exe` names), 0.2 CI and the build-only run.
+- 1.1 `.exe` stand-ins and 1.2 tool lookup, so the installer can be packaged before the real FFmpeg exists. Until (d), thumbnails and render info say Murre's media tool isn't available.
+- 1.4 `tauri.windows.conf.json`, 1.5 no menu bar on Windows, `Ctrl+,`, Check for updates in Settings, a Windows tray icon.
+- 2.1 opening files through the opener plugin (with the larger blocked list), 2.2 Explorer and "this PC" wording.
+- Every remaining Mac-only call (open in AE, Companion install, PlayerDebugMode, zip, Trash) says "not available on Windows yet" instead of failing oddly.
+- 8.1 the Windows job in `release.yml`.
+- Done when the build-only run produces a `-setup.exe` and CI is green on both systems.
 
-New dependencies: `windows-sys` (already in the lockfile, Windows-only, for the Job Object) and `dunce` (already in the lockfile). The `zip` crate is needed only if `tar.exe` turns out unreliable (5.2, 6.5).
+**(b) After Effects detection, launch and aerender rendering.** *M.* 3.1–3.4, 4.1–4.4 (Job Object cancel, fake-aerender test binary).
+
+**(c) Companion install.** *M.* 5.1–5.3 (`zip` crate, CEP folder, registry), 7.1 A, 7.2.
+
+**(d) FFmpeg.** *M.* 1.3 option A (MSYS2 build with the same LGPL flags, cached in CI). `THIRD-PARTY.md` and credits updated.
+
+**(e) Paths and the rest.** *M.* 3.2, 6.1–6.5, 7.2's tests, 8.2 and 8.3 (SmartScreen notes in `RELEASING.md` and `TESTER-GUIDE.md`, other docs).
+
+**After the PR: a test pass on a Windows PC with After Effects**, using the table above. Only then publish a Windows build to testers.
+
+Dependencies:
+- `windows-sys` (Windows only, for the Job Object), `dunce`, and `zip` with `deflate-flate2`. All three are already in `Cargo.lock` through Tauri, so no new code enters the build.
+- The build gains MSYS2 on the Windows runner (CI only) for FFmpeg.
 
 ## The ZXP signing password (done)
 

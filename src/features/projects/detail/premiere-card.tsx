@@ -9,6 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { formatBytes, formatDateTime } from "@/lib/format"
 import { api, errorMessage, type PremiereFile } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
+import { showInFileBrowser } from "@/lib/platform"
 
 /**
  * The Premiere Pro projects saved in the project's `04 Premiere & SFX` folder. Shown only when there is at least one, so a
@@ -74,7 +75,7 @@ export function PremiereCard({ projectId, reloadToken = 0 }: { projectId: string
                     <Video /> Open
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => void revealItemInDir(f.absolutePath).catch((e) => toast.error(errorMessage(e)))}>
-                    <FolderSearch /> Show in Finder
+                    <FolderSearch /> {showInFileBrowser}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

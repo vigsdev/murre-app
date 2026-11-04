@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { formatBytes, formatDateTime } from "@/lib/format"
 import { api, errorMessage, type Workfile, type WorkfileScan } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
+import { showInFileBrowser } from "@/lib/platform"
 
 type State =
   | { status: "loading" }
@@ -299,7 +300,7 @@ function WorkfileRow({
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={() => void revealItemInDir(w.absolutePath).catch((e) => toast.error(errorMessage(e)))}>
-            <FolderSearch /> Reveal in Finder
+            <FolderSearch /> {showInFileBrowser}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

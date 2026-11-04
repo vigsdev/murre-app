@@ -221,7 +221,7 @@ fn validate_parent(raw: &str) -> AppResult<PathBuf> {
         return invalid("Please choose a location for the project.");
     }
     match fs::metadata(p) {
-        Ok(m) if m.is_dir() => fs::canonicalize(p).map_err(|e| AppError::io(p, e)),
+        Ok(m) if m.is_dir() => crate::platform::canonicalize(p).map_err(|e| AppError::io(p, e)),
         Ok(_) => invalid("The chosen location is not a folder."),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             invalid("The chosen location does not exist. Is the drive connected?")
@@ -479,7 +479,7 @@ mod tests {
         let (dir, conn) = setup();
         let work = dir.path().join("work");
         let created = create(&conn, input(&work, "My Project")).unwrap();
-        let root = work.canonicalize().unwrap().join("My Project");
+        let root = crate::platform::canonicalize(&work).unwrap().join("My Project");
         assert_eq!(created.path, root.to_string_lossy());
         assert!(created.available);
         for d in PROJECT_DIRS {
@@ -567,7 +567,7 @@ mod tests {
         let sibling = work.join("Other");
         fs::create_dir(&sibling).unwrap();
         // Pre-register the path the new project would use so the index insert fails.
-        let target = work.canonicalize().unwrap().join("Clash");
+        let target = crate::platform::canonicalize(&work).unwrap().join("Clash");
         conn.execute(
             "INSERT INTO projects (id, name, path, priority, status, created_at, updated_at)
              VALUES ('x', 'Clash', ?1, 'low', 'not_started', 0, 0)",

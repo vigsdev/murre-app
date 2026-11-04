@@ -254,7 +254,7 @@ pub fn media_path(root: &Path, file: &str) -> AppResult<PathBuf> {
     if !meta.file_type().is_file() {
         return invalid("That is not a reference file.");
     }
-    fs::canonicalize(&path).map_err(|e| AppError::io(&path, e))
+    crate::platform::canonicalize(&path).map_err(|e| AppError::io(&path, e))
 }
 
 /// Relative path (from the project root) for use with the Open command.

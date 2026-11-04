@@ -11,7 +11,6 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 const MAX_ENTRIES: usize = 5000;
@@ -75,9 +74,9 @@ pub(crate) fn safe_components(rel: &str) -> AppResult<Vec<String>> {
 /// Resolve `rel` under `root`, following symlinks, and verify the result is still inside `root`.
 pub(crate) fn resolve_inside(root: &Path, rel: &str) -> AppResult<(PathBuf, PathBuf, Vec<String>)> {
     let parts = safe_components(rel)?;
-    let canon_root = fs::canonicalize(root).map_err(|e| AppError::io(root, e))?;
+    let canon_root = crate::platform::canonicalize(root).map_err(|e| AppError::io(root, e))?;
     let lexical = parts.iter().fold(canon_root.clone(), |p, c| p.join(c));
-    let canon = fs::canonicalize(&lexical).map_err(|e| {
+    let canon = crate::platform::canonicalize(&lexical).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             AppError::Invalid("That file or folder no longer exists.".into())
         } else {
@@ -98,8 +97,15 @@ fn extension_of(name: &str) -> Option<String> {
     (!ext.is_empty()).then_some(ext)
 }
 
+/// More files that Windows would run instead of open: programs, scripts, shortcuts, installers, registry files.
+const BLOCKED_ON_WINDOWS: &[&str] = &[
+    "com", "scr", "pif", "cpl", "msc", "msp", "msix", "msixbundle", "appx", "appxbundle", "appref-ms", "application",
+    "lnk", "js", "jse", "vbe", "wsf", "wsh", "hta", "psm1", "psd1", "reg", "inf", "gadget", "diagcab", "library-ms",
+    "settingcontent-ms", "sys", "dll",
+];
+
 fn is_blocked(ext: Option<&str>) -> bool {
-    ext.is_some_and(|e| BLOCKED_EXTENSIONS.contains(&e))
+    ext.is_some_and(|e| BLOCKED_EXTENSIONS.contains(&e) || (cfg!(windows) && BLOCKED_ON_WINDOWS.contains(&e)))
 }
 
 /// Case-insensitive comparison that orders digit runs numerically ("2" < "10").
@@ -150,7 +156,7 @@ pub fn list(root: &Path, rel: &str) -> AppResult<AssetListing> {
 
 fn list_with_limit(root: &Path, rel: &str, limit: usize) -> AppResult<AssetListing> {
     let (_canon_root, lexical, parts) = resolve_inside(root, rel)?;
-    let dir = fs::canonicalize(&lexical).map_err(|e| AppError::io(&lexical, e))?;
+    let dir = crate::platform::canonicalize(&lexical).map_err(|e| AppError::io(&lexical, e))?;
     if !dir.is_dir() {
         return invalid("That is not a folder.");
     }
@@ -223,7 +229,7 @@ pub(crate) fn open_target(root: &Path, rel: &str) -> AppResult<PathBuf> {
     let meta = fs::symlink_metadata(&lexical).map_err(|e| AppError::io(&lexical, e))?;
     if meta.file_type().is_symlink() {
         return invalid(
-            "Shortcuts (symbolic links) are not opened from Murre. Use Show in Finder.",
+            format!("Shortcuts (symbolic links) are not opened from Murre. Use Show in {}.", crate::platform::FILE_BROWSER),
         );
     }
     if !meta.is_file() {
@@ -235,20 +241,21 @@ pub(crate) fn open_target(root: &Path, rel: &str) -> AppResult<PathBuf> {
         .unwrap_or_default();
     if is_blocked(extension_of(&name).as_deref()) {
         return invalid(
-            "For safety, Murre does not open programs or scripts. Use Show in Finder instead.",
+            format!("For safety, Murre does not open programs or scripts. Use Show in {} instead.", crate::platform::FILE_BROWSER),
         );
     }
     Ok(lexical)
 }
 
-/// Open a project file with its default application (macOS `open`).
+/// Open a project file with its default application (macOS `open`). On Windows the caller opens the checked
+/// `open_target` through the opener plugin instead.
 pub fn open_file(root: &Path, rel: &str) -> AppResult<()> {
     let target = open_target(root, rel)?;
     if !cfg!(target_os = "macos") {
-        return invalid("Opening files is only supported on macOS.");
+        return invalid(format!("Opening files isn’t available on {} yet.", crate::platform::OS_NAME));
     }
     // The path is absolute (starts with "/"), so it cannot be read as an option, and no shell is involved.
-    let status = Command::new("open")
+    let status = crate::platform::command("open")
         .arg(&target)
         .status()
         .map_err(|e| AppError::io(&target, e))?;
@@ -343,8 +350,7 @@ mod tests {
         assert_eq!(imgs.entries.len(), 1, ".DS_Store hidden");
         assert_eq!(imgs.entries[0].extension.as_deref(), Some("png"));
         assert!(
-            imgs.entries[0]
-                .absolute_path
+            Path::new(&imgs.entries[0].absolute_path)
                 .ends_with("02 Assets/01 Images/Hero.PNG")
         );
         assert_eq!(list(d.path(), "./02 Assets/").unwrap().path, "02 Assets");
@@ -404,5 +410,13 @@ mod tests {
         assert_eq!(l.entries.len(), 3);
         assert!(l.truncated);
         assert!(!list_with_limit(d.path(), "", 5).unwrap().truncated);
+    }
+
+    #[test]
+    fn windows_only_runnables_are_blocked_on_windows() {
+        assert!(is_blocked(Some("exe")) && is_blocked(Some("ps1")));
+        assert_eq!(is_blocked(Some("lnk")), cfg!(windows));
+        assert_eq!(is_blocked(Some("js")), cfg!(windows));
+        assert!(!is_blocked(Some("mov")) && !is_blocked(Some("aep")) && !is_blocked(Some("jsx")));
     }
 }

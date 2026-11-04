@@ -11,10 +11,11 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { applyAppearance } from "@/lib/preferences"
 import "./App.css"
+import { isMac } from "@/lib/platform"
 
 // The macOS window has an overlay title bar: the traffic lights sit on top of the page.
 // This class lets the layout leave room for them (it does nothing on other systems).
-if (/Mac/i.test(navigator.platform || navigator.userAgent)) document.documentElement.classList.add("is-mac")
+if (isMac) document.documentElement.classList.add("is-mac")
 
 applyAppearance()
 

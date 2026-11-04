@@ -558,8 +558,8 @@ mod tests {
 
         let new = read_xml(&pdir.join("Film.prproj")).unwrap();
         let paths = clip_paths(&new);
-        assert_eq!(paths[0], pdir.join("Footage/a.mp4").to_string_lossy());
-        assert_eq!(paths[1], pdir.join("Footage/a (2).mp4").to_string_lossy());
+        assert_eq!(paths[0], pdir.join("Footage").join("a.mp4").to_string_lossy());
+        assert_eq!(paths[1], pdir.join("Footage").join("a (2).mp4").to_string_lossy());
         assert_eq!(paths[2], p("gone.mov"), "missing footage keeps its path");
         assert!(new.contains("<RelativePath>./Footage/a (2).mp4</RelativePath>"));
 

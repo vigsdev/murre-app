@@ -30,6 +30,7 @@ import { NotesTab } from "./notes-tab"
 import { PackageDialog } from "./package-dialog"
 import { ProjectTab } from "./project-tab"
 import { RendersTab } from "./renders-tab"
+import { showInFileBrowser } from "@/lib/platform"
 
 // The board is loaded only when the References tab is first opened.
 const ReferencesTab = lazy(() => import("./references-tab").then((m) => ({ default: m.ReferencesTab })))
@@ -169,11 +170,11 @@ export function ProjectDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                aria-label="Show in Finder"
-                title="Show in Finder"
+                aria-label={showInFileBrowser}
+                title={showInFileBrowser}
                 onClick={() => void revealItemInDir(project.path).catch((e) => toast.error(errorMessage(e)))}
               >
-                <FolderSearch /> <span className="hidden xl:inline">Show in Finder</span>
+                <FolderSearch /> <span className="hidden xl:inline">{showInFileBrowser}</span>
               </Button>
             </>
           )

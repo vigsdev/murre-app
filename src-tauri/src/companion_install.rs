@@ -62,7 +62,7 @@ pub fn find_bundle(candidates: &[PathBuf]) -> Option<PathBuf> {
 /// Version of what the app ships, read from inside the package when it is signed.
 fn bundled_version(bundle: &Path) -> Option<String> {
     if let Some(zxp) = signed_package(bundle) {
-        let out = std::process::Command::new("unzip").arg("-p").arg(zxp).arg("CSXS/manifest.xml").output().ok()?;
+        let out = crate::platform::command("unzip").arg("-p").arg(zxp).arg("CSXS/manifest.xml").output().ok()?;
         return if out.status.success() { read_version(&String::from_utf8_lossy(&out.stdout)) } else { None };
     }
     version_in(bundle)
@@ -71,7 +71,7 @@ fn bundled_version(bundle: &Path) -> Option<String> {
 /// Unpack a signed package as it is: every file, including ones a plain copy would skip.
 fn unzip_to(zxp: &Path, dst: &Path) -> AppResult<()> {
     fs::create_dir_all(dst).map_err(|e| AppError::io(dst, e))?;
-    let out = std::process::Command::new("unzip")
+    let out = crate::platform::command("unzip")
         .args(["-q", "-o"])
         .arg(zxp)
         .arg("-d")
@@ -178,7 +178,7 @@ pub fn enable_debug_mode() {
         return;
     }
     for v in CSXS_VERSIONS {
-        let _ = std::process::Command::new("defaults")
+        let _ = crate::platform::command("defaults")
             .args(["write", &format!("com.adobe.CSXS.{v}"), "PlayerDebugMode", "1"])
             .output();
     }
@@ -195,7 +195,7 @@ pub fn debug_mode_enabled() -> bool {
         return false;
     }
     CSXS_VERSIONS.iter().all(|v| {
-        std::process::Command::new("defaults")
+        crate::platform::command("defaults")
             .args(["read", &format!("com.adobe.CSXS.{v}"), "PlayerDebugMode"])
             .output()
             .map(|o| o.status.success() && is_on(&String::from_utf8_lossy(&o.stdout)))
@@ -209,7 +209,7 @@ pub fn disable_debug_mode() {
         return;
     }
     for v in CSXS_VERSIONS {
-        let _ = std::process::Command::new("defaults").args(["delete", &format!("com.adobe.CSXS.{v}"), "PlayerDebugMode"]).output();
+        let _ = crate::platform::command("defaults").args(["delete", &format!("com.adobe.CSXS.{v}"), "PlayerDebugMode"]).output();
     }
 }
 
