@@ -841,7 +841,8 @@ mod tests {
     }
 
     fn have_ffmpeg() -> bool {
-        find_tool("ffmpeg").is_some() && find_tool("ffprobe").is_some()
+        // Found and actually starts (a stand-in or a broken copy on PATH counts as not installed).
+        ["ffmpeg", "ffprobe"].iter().all(|t| find_tool(t).is_some_and(|p| runs(&p)))
     }
 
     fn make_clip(path: &Path, secs: &str) {

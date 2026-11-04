@@ -784,7 +784,7 @@ mod tests {
         conn.execute(
             "INSERT INTO projects (id, name, path, priority, status, created_at, updated_at)
              VALUES ('other', 'Other', ?1, 'low', 'not_started', 0, 0)",
-            [folder.canonicalize().unwrap().to_string_lossy()],
+            [crate::platform::canonicalize(&folder).unwrap().to_string_lossy()],
         )
         .unwrap();
         // already indexed -> refused before touching anything
@@ -803,7 +803,7 @@ mod tests {
         assert_eq!(r.outcome, ImportOutcome::Relinked);
         let all = list(&conn).unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0].path, moved.canonicalize().unwrap().to_string_lossy());
+        assert_eq!(all[0].path, crate::platform::canonicalize(&moved).unwrap().to_string_lossy());
         assert!(all[0].available);
     }
 
@@ -860,7 +860,7 @@ mod tests {
         let r = relink(&conn, &a.project.id, moved.to_str().unwrap()).unwrap();
         assert!(r.available);
         assert_eq!(r.project.id, a.project.id);
-        assert_eq!(r.path, fs::canonicalize(&moved).unwrap().to_string_lossy());
+        assert_eq!(r.path, crate::platform::canonicalize(&moved).unwrap().to_string_lossy());
         assert!(
             moved.join(".murre/project.json").exists(),
             "nothing moved or deleted"

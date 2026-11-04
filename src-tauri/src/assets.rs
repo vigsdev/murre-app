@@ -350,8 +350,7 @@ mod tests {
         assert_eq!(imgs.entries.len(), 1, ".DS_Store hidden");
         assert_eq!(imgs.entries[0].extension.as_deref(), Some("png"));
         assert!(
-            imgs.entries[0]
-                .absolute_path
+            Path::new(&imgs.entries[0].absolute_path)
                 .ends_with("02 Assets/01 Images/Hero.PNG")
         );
         assert_eq!(list(d.path(), "./02 Assets/").unwrap().path, "02 Assets");
