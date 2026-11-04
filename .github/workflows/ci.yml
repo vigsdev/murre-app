@@ -57,9 +57,10 @@ jobs:
         working-directory: murre-ae
         run: yarn install --frozen-lockfile
 
+      # The same check its build runs (the panel code; ExtendScript in src/jsx is compiled separately by Vite).
       - name: Type-check the Companion
         working-directory: murre-ae
-        run: npx tsc --noEmit
+        run: npx tsc -p tsconfig-build.json --noEmit
 
       - name: Companion tests
         working-directory: murre-ae
