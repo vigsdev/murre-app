@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatBytes, formatDateTime } from "@/lib/format"
 import { api, errorMessage, type MediaInfo, type MediaTools, type RenderEntry } from "@/lib/tauri"
+import { showInFileBrowser, installFfmpegHint } from "@/lib/platform"
 
 export function formatDuration(secs: number): string {
   const total = Math.round(secs * 100) / 100
@@ -60,7 +61,7 @@ function Body({ projectId, entry, tools, busy, onApprove }: Omit<Props, "entry" 
         .catch((e) => live && setPlayback({ status: "error", message: errorMessage(e) }))
     }
     if (!tools?.ffprobe) {
-      setProbe({ status: "error", message: "Murre’s media tool (ffprobe) wouldn’t start. Reinstall Murre, or install FFmpeg yourself (brew install ffmpeg)." })
+      setProbe({ status: "error", message: `Murre’s media tool (ffprobe) wouldn’t start. Reinstall Murre, or ${installFfmpegHint}.` })
     } else {
       setProbe({ status: "loading" })
       api
@@ -147,7 +148,7 @@ function Body({ projectId, entry, tools, busy, onApprove }: Omit<Props, "entry" 
             <ExternalLink data-icon="inline-start" /> Open
           </Button>
           <Button variant="outline" onClick={() => revealItemInDir(entry.absolutePath).catch((e) => toast.error(errorMessage(e)))}>
-            <FolderSearch data-icon="inline-start" /> Show in Finder
+            <FolderSearch data-icon="inline-start" /> {showInFileBrowser}
           </Button>
         </div>
 

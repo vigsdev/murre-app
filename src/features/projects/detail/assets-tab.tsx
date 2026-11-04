@@ -20,6 +20,7 @@ import { api, errorMessage, type AssetEntry, type AssetListing, type ProjectReco
 import { cn } from "@/lib/utils"
 import { FootagePanel } from "@/features/footage/footage-panel"
 import { iconFor } from "./file-icons"
+import { showInFileBrowser } from "@/lib/platform"
 
 type State =
   | { status: "loading" }
@@ -225,7 +226,7 @@ function AssetRow({ entry: e, onActivate }: { entry: AssetEntry; onActivate: () 
               </DropdownMenuItem>
             )}
             <DropdownMenuItem onClick={() => void revealItemInDir(e.absolutePath).catch((err) => toast.error(errorMessage(err)))}>
-              <FolderSearch /> Show in Finder
+              <FolderSearch /> {showInFileBrowser}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

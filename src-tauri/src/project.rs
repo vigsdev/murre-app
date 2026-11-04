@@ -221,7 +221,7 @@ fn validate_parent(raw: &str) -> AppResult<PathBuf> {
         return invalid("Please choose a location for the project.");
     }
     match fs::metadata(p) {
-        Ok(m) if m.is_dir() => fs::canonicalize(p).map_err(|e| AppError::io(p, e)),
+        Ok(m) if m.is_dir() => crate::platform::canonicalize(p).map_err(|e| AppError::io(p, e)),
         Ok(_) => invalid("The chosen location is not a folder."),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             invalid("The chosen location does not exist. Is the drive connected?")

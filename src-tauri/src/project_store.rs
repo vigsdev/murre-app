@@ -374,7 +374,7 @@ pub(crate) fn resolve_folder(raw: &str) -> AppResult<PathBuf> {
         return invalid("Please choose a folder.");
     }
     match fs::metadata(p) {
-        Ok(m) if m.is_dir() => fs::canonicalize(p).map_err(|e| AppError::io(p, e)),
+        Ok(m) if m.is_dir() => crate::platform::canonicalize(p).map_err(|e| AppError::io(p, e)),
         Ok(_) => invalid("The chosen item is not a folder."),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             invalid("The chosen folder does not exist.")

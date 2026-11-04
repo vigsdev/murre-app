@@ -18,6 +18,7 @@ import { PrioritySelect, StatusSelect } from "./selects"
 import { CompanionInstallCard, useCompanionInstall } from "@/features/companion/companion-install"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { defaultInstall, installName, useAeInstalls } from "./use-ae-installs"
+import { showInFileBrowser, baseName } from "@/lib/platform"
 
 type FieldErrors = Partial<Record<"name" | "parentDir", string>>
 
@@ -124,7 +125,7 @@ export function NewProjectPage() {
       })
       toast.success(`“${created.name}” is ready. Let’s make something.`, {
         description: created.path,
-        action: { label: "Show in Finder", onClick: () => void revealItemInDir(created.path) },
+        action: { label: showInFileBrowser, onClick: () => void revealItemInDir(created.path) },
       })
       // The project exists now; a problem with After Effects is reported but never undoes it.
       if (start && install) {
@@ -132,7 +133,7 @@ export function NewProjectPage() {
         try {
           const outcome = await api.createStarterInAfterEffects(created.id, install.path)
           if (outcome.added) {
-            toast.success(`Created ${outcome.added.split("/").pop()} in After Effects`)
+            toast.success(`Created ${baseName(outcome.added)} in After Effects`)
             if (outcome.previous) toast.message(`Your previous After Effects project was saved at ${outcome.previous}`)
           } else {
             toast.error(outcome.message ?? "After Effects could not create the project.")

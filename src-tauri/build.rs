@@ -2,8 +2,8 @@ use std::path::Path;
 
 /// The app ships ffmpeg and ffprobe next to its own program (`bundle.externalBin`), and the build refuses to run when
 /// those files are missing. A checkout that has not made them yet gets stand-ins that do nothing, so the build and
-/// `tauri dev` still work; the app notices they don't run and falls back to an ffmpeg installed on the Mac. The real
-/// ones come from `scripts/make-ffmpeg.sh`.
+/// `tauri dev` still work; the app notices they don't run and falls back to an ffmpeg installed on the computer. The
+/// real ones come from `scripts/make-ffmpeg.sh`.
 fn main() {
     let dir = Path::new("binaries");
     let _ = std::fs::create_dir_all(dir);
@@ -14,7 +14,9 @@ fn main() {
             triples.push(t);
         }
         for triple in triples {
-            let path = dir.join(format!("{tool}-{triple}"));
+            // Tauri looks for `<name>-<triple>.exe` when building for Windows.
+            let ext = if triple.contains("windows") { ".exe" } else { "" };
+            let path = dir.join(format!("{tool}-{triple}{ext}"));
             if !path.exists() {
                 let _ = std::fs::write(&path, "#!/bin/sh\n# Stand-in. Run scripts/make-ffmpeg.sh for the real one.\nexit 1\n");
                 #[cfg(unix)]

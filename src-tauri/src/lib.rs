@@ -37,6 +37,7 @@ mod spaces;
 mod startup;
 mod tasks;
 mod updater;
+mod platform;
 mod watcher;
 mod workfiles;
 
@@ -47,13 +48,41 @@ use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
 
-/// Closing the window leaves the app running in the menu bar. On macOS the Dock icon goes away too.
+/// Closing the window leaves the app running in the menu bar (the notification area on Windows). On macOS the Dock
+/// icon goes away too.
 fn hide_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    #[cfg(windows)]
+    tell_once_about_tray(app);
+}
+
+/// Windows users usually expect the close button to quit, so the first time it hides Murre instead, say where it went.
+#[cfg(windows)]
+fn tell_once_about_tray(app: &tauri::AppHandle) {
+    use tauri_plugin_dialog::DialogExt;
+    const KEY: &str = "tray_notice_shown";
+    let Some(state) = app.try_state::<AppState>() else { return };
+    {
+        let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+        let shown = conn
+            .query_row("SELECT value FROM settings WHERE key = ?1", [KEY], |r| r.get::<_, String>(0))
+            .is_ok();
+        if shown {
+            return;
+        }
+        let _ = conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?1, '1')", [KEY]);
+    }
+    app.dialog()
+        .message(
+            "Murre is still running, so renders and the After Effects link keep going. \
+             Open it again from its icon in the notification area. To quit, right-click that icon and choose Quit Murre.",
+        )
+        .title("Murre is still running")
+        .show(|_| {});
 }
 
 fn show_main(app: &tauri::AppHandle) {
@@ -66,6 +95,15 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// The Mac tray icon is a black template that macOS recolours. Windows shows icons as they are, so it gets the app icon.
+fn tray_icon() -> tauri::Result<tauri::image::Image<'static>> {
+    if cfg!(target_os = "macos") {
+        tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))
+    } else {
+        tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+    }
+}
+
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -73,8 +111,8 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit Murre", true, Some("CmdOrCtrl+Q"))?;
     let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &quit])?;
     TrayIconBuilder::with_id("main")
-        .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
-        .icon_as_template(true)
+        .icon(tray_icon()?)
+        .icon_as_template(cfg!(target_os = "macos"))
         .tooltip("Murre")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -99,6 +137,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 
 /// The menu bar menu. Settings and "Check for updates" live here; there is no Close Window item on purpose, so
 /// Cmd+W stays free for closing a tab.
+#[cfg(target_os = "macos")]
 fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
     let check = MenuItemBuilder::with_id("updater.check", "Check for updates…").build(app)?;
@@ -655,12 +694,20 @@ async fn list_assets(
 }
 
 #[tauri::command]
-async fn open_asset(state: State<'_, AppState>, project_id: String, path: String) -> AppResult<()> {
+async fn open_asset(app: tauri::AppHandle, state: State<'_, AppState>, project_id: String, path: String) -> AppResult<()> {
     let root = {
         let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
         project_store::available_root(&conn, &project_id)?
     };
-    assets::open_file(&root, &path)
+    if cfg!(target_os = "macos") {
+        return assets::open_file(&root, &path);
+    }
+    // Windows: the same checks, then the opener plugin opens the file with its default app.
+    let target = assets::open_target(&root, &path)?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(target.to_string_lossy(), None::<&str>)
+        .map_err(|e| AppError::Invalid(format!("{} couldn’t open that file: {e}", platform::OS_NAME)))
 }
 
 /// Where the app's copy of the Companion can be (installed app first, then the source tree when running `tauri dev`).
@@ -707,6 +754,12 @@ async fn set_companion_debug_mode(enabled: bool) -> AppResult<bool> {
 #[tauri::command]
 async fn install_companion(app: tauri::AppHandle) -> AppResult<companion_install::CompanionInstall> {
     tauri::async_runtime::spawn_blocking(move || {
+        if !cfg!(target_os = "macos") {
+            return Err(error::AppError::Invalid(format!(
+                "Installing the Companion from Murre isn’t available on {} yet.",
+                platform::OS_NAME
+            )));
+        }
         let home = app.path().home_dir().map_err(|e| error::AppError::Invalid(e.to_string()))?;
         let Some(bundle) = companion_bundle(&app) else {
             return Err(error::AppError::Invalid(
@@ -1565,6 +1618,9 @@ pub fn run() {
         })
         .setup(|app| {
             setup_tray(app)?;
+            // A Mac app menu would show as a menu bar inside the window on Windows. Settings (Ctrl+,) and
+            // "Check for updates" are in the app itself there.
+            #[cfg(target_os = "macos")]
             install_app_menu(app.handle())?;
             updater::register(app.handle());
             updater::spawn_daily_checks(app.handle().clone());

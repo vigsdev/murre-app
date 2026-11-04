@@ -10,6 +10,7 @@ import { useTabs } from "@/features/tabs/tabs-context"
 import { api, type ProjectRecord } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import { rank, type Searchable } from "./match"
+import { modKey } from "@/lib/platform"
 
 type Entry = Searchable & {
   id: string
@@ -195,7 +196,7 @@ export function Switcher() {
         </div>
         <div className="flex items-center gap-4 border-t px-4 py-2 text-xs text-muted-foreground">
           <span className="flex items-center gap-1"><CornerDownLeft className="size-3" /> Open</span>
-          <span>⌘↵ New tab</span>
+          <span>{modKey}↵ New tab</span>
           <span className="ml-auto">Esc to close</span>
         </div>
       </DialogContent>

@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { openProjectInAfterEffects } from "./open-in-ae"
 import { ProjectCover } from "./project-cover"
 import { formatDeadline, isOverdue, priorityLabel, statusLabel, timeAgo } from "./project-utils"
+import { showInFileBrowser } from "@/lib/platform"
 
 interface Props {
   project: ProjectRecord
@@ -76,7 +77,7 @@ export function ProjectCard({ project: p, onEdit, onArchive, onUnarchive, onRemo
                 <Pencil /> Edit
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onReveal(p)} disabled={!p.available}>
-                <FolderSearch /> Show in Finder
+                <FolderSearch /> {showInFileBrowser}
               </DropdownMenuItem>
               {p.status === "archived" ? (
                 <DropdownMenuItem onClick={() => onUnarchive(p)} disabled={!p.available}>

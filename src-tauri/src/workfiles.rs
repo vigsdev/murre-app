@@ -330,8 +330,8 @@ fn resolve_workfile(root: &Path, rel: &str) -> AppResult<()> {
         return invalid("Only .aep files can be marked as the current After Effects project.");
     }
     let full = root.join(p);
-    let canon_root = fs::canonicalize(root).map_err(|e| AppError::io(root, e))?;
-    let canon = fs::canonicalize(&full).map_err(|e| {
+    let canon_root = crate::platform::canonicalize(root).map_err(|e| AppError::io(root, e))?;
+    let canon = crate::platform::canonicalize(&full).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             AppError::Invalid("That file no longer exists.".into())
         } else {

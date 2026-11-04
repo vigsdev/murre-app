@@ -2,10 +2,11 @@ import { listen } from "@tauri-apps/api/event"
 import { useEffect } from "react"
 import { useNavigate } from "react-router"
 import { flushAll } from "@/lib/flush-registry"
+import { isMac } from "@/lib/platform"
 
 /**
  * What the menu bar and the updater ask the page to do: open Settings (Cmd+,), and save open notes and the
- * reference canvas just before an update restarts the app.
+ * reference canvas just before an update restarts the app. Windows has no app menu, so Ctrl+, is handled here.
  */
 export function useAppMenuEvents() {
   const navigate = useNavigate()
@@ -23,9 +24,17 @@ export function useAppMenuEvents() {
     }
     on("menu:open-settings", () => navigate("/settings"))
     on("flush-before-restart", () => void flushAll())
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key === ",") {
+        e.preventDefault()
+        navigate("/settings")
+      }
+    }
+    if (!isMac) window.addEventListener("keydown", onKey)
     return () => {
       cancelled = true
       offs.forEach((off) => off())
+      window.removeEventListener("keydown", onKey)
     }
   }, [navigate])
 }

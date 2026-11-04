@@ -168,14 +168,19 @@ pub fn error(area: &str, message: &str) {
     }
 }
 
-fn macos_version() -> String {
-    std::process::Command::new("sw_vers")
+/// "macOS 15.5" on a Mac. Elsewhere just the system's name, because the version needs a system call per system.
+fn os_version() -> String {
+    if !cfg!(target_os = "macos") {
+        return crate::platform::OS_NAME.to_string();
+    }
+    let v = crate::platform::command("sw_vers")
         .arg("-productVersion")
         .output()
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".into())
+        .unwrap_or_else(|| "unknown".into());
+    format!("macOS {v}")
 }
 
 /// The report to copy: versions, then the recent log, with paths removed.
@@ -183,10 +188,10 @@ pub fn report() -> String {
     let home = std::env::var("HOME").ok();
     let lines = LOGGER.get().map(|l| l.recent(REPORT_LINES)).unwrap_or_default();
     let mut out = format!(
-        "Murre {} ({})\nmacOS {} · {}\nReport made {}\nFile paths and names are left out of this report.\n\n",
+        "Murre {} ({})\n{} · {}\nReport made {}\nFile paths and names are left out of this report.\n\n",
         env!("CARGO_PKG_VERSION"),
         if cfg!(debug_assertions) { "development build" } else { "release" },
-        macos_version(),
+        os_version(),
         std::env::consts::ARCH,
         iso_utc(now_secs()),
     );

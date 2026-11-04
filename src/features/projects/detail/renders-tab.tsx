@@ -13,6 +13,7 @@ import { RenderPanel } from "@/features/render/render-panel"
 import { cn } from "@/lib/utils"
 import { RenderDetailSheet } from "./render-detail-sheet"
 import { RenderThumb } from "./render-thumb"
+import { installFfmpegHint } from "@/lib/platform"
 
 type State =
   | { status: "loading" }
@@ -99,7 +100,7 @@ export function RendersTab({ project, reloadToken = 0, compsToken = 0 }: { proje
           <Info />
           <AlertTitle>Murre’s media tools wouldn’t start</AlertTitle>
           <AlertDescription>
-            Thumbnails and media details need ffmpeg and ffprobe, which come with Murre. Reinstall Murre, or install them yourself (brew install ffmpeg), then press
+            Thumbnails and media details need ffmpeg and ffprobe, which come with Murre. Reinstall Murre, or {installFfmpegHint}, then press
             refresh. Files can still be listed, approved, opened and played without them.
           </AlertDescription>
         </Alert>

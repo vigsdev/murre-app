@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 const SETTING_KEY: &str = "aerender_path";
@@ -152,7 +152,7 @@ pub fn validate(path: &Path) -> AppResult<String> {
     if !is_executable(path) {
         return invalid(format!("{} is not executable.", path.display()));
     }
-    let mut child = Command::new(path)
+    let mut child = crate::platform::command(path)
         .arg("-version")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

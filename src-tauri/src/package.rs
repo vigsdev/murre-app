@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(test)]
 use std::process::Command;
 
 const PREMIERE_DIR: &str = "04 Premiere & SFX";
@@ -147,7 +148,7 @@ fn rel_slash(root: &Path, p: &Path) -> Option<String> {
         Ok(r) => r.to_path_buf(),
         Err(_) => {
             // The same folder reached through a link (for example /var vs /private/var).
-            let (r, q) = (fs::canonicalize(root).ok()?, fs::canonicalize(p).ok()?);
+            let (r, q) = (crate::platform::canonicalize(root).ok()?, crate::platform::canonicalize(p).ok()?);
             q.strip_prefix(&r).ok()?.to_path_buf()
         }
     };
@@ -334,7 +335,7 @@ fn plan(root: &Path) -> AppResult<Plan> {
         } else if f.installed == Some(true) {
             (true, None)
         } else {
-            (false, Some("Not on this Mac".to_string()))
+            (false, Some(format!("Not on {}", crate::platform::THIS_COMPUTER)))
         };
         if bundle {
             let l = loc.clone().unwrap_or_default();
@@ -555,9 +556,11 @@ pub fn make_zip(src: &Path, out: &Path) -> AppResult<()> {
     let parent = src.parent().ok_or_else(|| AppError::Invalid("Can't zip that folder.".into()))?;
     let name = src.file_name().ok_or_else(|| AppError::Invalid("Can't zip that folder.".into()))?;
     let status = if cfg!(target_os = "macos") {
-        Command::new("/usr/bin/ditto").arg("-c").arg("-k").arg("--keepParent").arg(src).arg(out).status()
+        crate::platform::command("/usr/bin/ditto").arg("-c").arg("-k").arg("--keepParent").arg(src).arg(out).status()
+    } else if cfg!(windows) {
+        return invalid("Making a zip isn’t available on Windows yet. The folder is still there.");
     } else {
-        Command::new("zip").arg("-rq").arg(out).arg(name).current_dir(parent).status()
+        crate::platform::command("zip").arg("-rq").arg(out).arg(name).current_dir(parent).status()
     };
     match status {
         Ok(s) if s.success() && out.is_file() => Ok(()),

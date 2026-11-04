@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { formatBytes } from "@/lib/format"
 import { api, errorMessage, type PackageCheck, type PackageProgress, type PackageReport } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
+import { showInFileBrowser, thisComputer } from "@/lib/platform"
 
 type Format = "folder" | "zip" | "both"
 
@@ -171,7 +172,7 @@ export function PackageDialog({ projectId, projectName, open, onOpenChange }: { 
                 {check.fonts.length > 0 && (
                   <Row ok>
                     {check.fonts.length} {check.fonts.length === 1 ? "font" : "fonts"}: {bundleable} can come along.
-                    {check.fonts.length > bundleable && " The rest are Adobe Fonts, come with macOS, or aren’t on this Mac. They’re listed in the note."}
+                    {check.fonts.length > bundleable && ` The rest are Adobe Fonts, come with the system, or aren’t on ${thisComputer}. They’re listed in the note.`}
                   </Row>
                 )}
                 {check.plugins.length > 0 && <Row ok>The other person needs these plugins: {check.plugins.join(", ")}. They go in the note.</Row>}
@@ -201,7 +202,7 @@ export function PackageDialog({ projectId, projectName, open, onOpenChange }: { 
                 <label className={cn("flex cursor-pointer items-start gap-2 text-sm", bundleable === 0 && "opacity-50")}>
                   <Checkbox checked={fonts && bundleable > 0} disabled={bundleable === 0} onCheckedChange={(c) => setFonts(!!c)} />
                   <span>
-                    Include the fonts installed on this Mac ({bundleable})
+                    Include the fonts installed on {thisComputer} ({bundleable})
                     <span className="block text-xs text-muted-foreground">Check that each font’s license lets you share it.</span>
                   </span>
                 </label>
@@ -281,7 +282,7 @@ export function PackageDialog({ projectId, projectName, open, onOpenChange }: { 
                 variant="outline"
                 onClick={() => void revealItemInDir((report.zip ?? report.folder)!).catch((e) => toast.error(errorMessage(e)))}
               >
-                <FolderSearch /> Show in Finder
+                <FolderSearch /> {showInFileBrowser}
               </Button>
               <Button onClick={() => onOpenChange(false)}>Done</Button>
             </>
