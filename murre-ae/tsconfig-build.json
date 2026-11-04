@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noImplicitAny": false,
+    "paths": {
+      "@esTypes/*": [
+        "./src/js/lib/cep/es-types"
+      ]
+    }
+  },
+  "exclude": [
+    "./src/jsx",
+    "./src/**/*.test.ts",
+    "./src/js/lib/murre/test-helpers.ts"
+  ]
+}

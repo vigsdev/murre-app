@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "lastScanAt": "2026-10-26T12:00:00.000Z",
+  "colors": [
+    {
+      "color": [
+        1,
+        0.5,
+        0,
+        1
+      ],
+      "comp": "Main",
+      "compId": 1,
+      "layer": "Title",
+      "property": "Contents > Rectangle 1 > Fill 1 > Color"
+    },
+    {
+      "color": [
+        0.2,
+        0.4,
+        0.6
+      ],
+      "comp": "Main",
+      "compId": 1,
+      "layer": "Text",
+      "property": "Text > Source Text > Fill color"
+    },
+    {
+      "color": [
+        1,
+        0.5,
+        0,
+        1
+      ],
+      "comp": "Pre",
+      "compId": 2,
+      "layer": "Title",
+      "property": "Contents > Rectangle 1 > Fill 1 > Color"
+    },
+    {
+      "color": [
+        0.2,
+        0.4,
+        0.6
+      ],
+      "comp": "Pre",
+      "compId": 2,
+      "layer": "Text",
+      "property": "Text > Source Text > Fill color"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+node_modules
+dist
+src-tauri/target
+*.tsbuildinfo
+src-tauri/binaries
+.ffmpeg-build
+.DS_Store

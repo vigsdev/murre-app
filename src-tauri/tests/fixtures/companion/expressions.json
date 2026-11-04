@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "lastScanAt": "2026-10-26T12:00:00.000Z",
+  "expressions": [
+    {
+      "expression": "var a = 1;\n  wiggle(2, 30)\n",
+      "comp": "Main",
+      "compId": 1,
+      "layer": "Title",
+      "property": "Transform > Position",
+      "enabled": true
+    },
+    {
+      "expression": "time*10",
+      "comp": "Main",
+      "compId": 1,
+      "layer": "Title",
+      "property": "Transform > Rotation",
+      "enabled": false,
+      "error": "bad"
+    }
+  ]
+}

@@ -1,0 +1,275 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Inter Variable', system-ui, sans-serif;
+    /* Weights: headings and labels 510, body 400. */
+    --font-weight-medium: 510;
+    --font-weight-semibold: 510;
+    --font-weight-bold: 590;
+    /* Type scale in px at the 15px root: 12 / 14 / 15 / 16 / 20 / 24. Small text has no tracking, body is tightened a touch. */
+    --text-xs: 0.8rem;
+    --text-xs--line-height: 1.4;
+    --text-xs--letter-spacing: 0em;
+    --text-sm: 0.9333rem;
+    --text-sm--line-height: 1.4286;
+    --text-sm--letter-spacing: 0em;
+    --text-base: 1rem;
+    --text-base--line-height: 1.6;
+    --text-base--letter-spacing: -0.011em;
+    --text-lg: 1.0667rem;
+    --text-lg--line-height: 1.5;
+    --text-lg--letter-spacing: -0.012em;
+    --text-xl: 1.3333rem;
+    --text-xl--line-height: 1.33;
+    --text-xl--letter-spacing: -0.012em;
+    --text-2xl: 1.6rem;
+    --text-2xl--line-height: 1.25;
+    --text-2xl--letter-spacing: -0.02em;
+    --text-3xl: 2rem;
+    --text-3xl--line-height: 1.2;
+    --text-3xl--letter-spacing: -0.022em;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.2);
+    --radius-2xl: calc(var(--radius) * 1.4);
+    --radius-3xl: calc(var(--radius) * 1.8);
+    --radius-4xl: calc(var(--radius) * 2.2);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0 0 0 / 6%);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --radius: 0.4rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0 0 0 / 5%);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    /* Surface ladder: page, card, raised (popovers, hover), with white hairlines instead of shadows. */
+    --background: #08090a;
+    --foreground: #f7f8f8;
+    --card: #0f1011;
+    --card-foreground: #f7f8f8;
+    --popover: #141516;
+    --popover-foreground: #f7f8f8;
+    --primary: #e5e5e6;
+    --primary-foreground: #08090a;
+    --secondary: #141516;
+    --secondary-foreground: #f7f8f8;
+    --muted: #141516;
+    --muted-foreground: #8a8f98;
+    --accent: oklch(1 0 0 / 7%);
+    --accent-foreground: #f7f8f8;
+    --destructive: #ff5c5c;
+    --border: oklch(1 0 0 / 8%);
+    --input: oklch(1 0 0 / 12%);
+    --ring: oklch(1 0 0 / 30%);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: #0c0d0e;
+    --sidebar-foreground: #f7f8f8;
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(1 0 0 / 7%);
+    --sidebar-accent-foreground: #f7f8f8;
+    --sidebar-border: oklch(1 0 0 / 8%);
+    --sidebar-ring: oklch(1 0 0 / 30%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    font-size: 15px;
+    @apply font-sans;
+    font-feature-settings: "ss01", "ss02", "cv01", "cv03";
+    letter-spacing: -0.011em;
+    -webkit-font-smoothing: antialiased;
+    }
+}
+/* Rich-text editor content (Tiptap). */
+.tiptap {
+  outline: none;
+  min-height: 16rem;
+  line-height: 1.6;
+  font-size: 0.9375rem;
+}
+.tiptap > * + * { margin-top: 0.6em; }
+.tiptap h1 { font-size: 1.6rem; font-weight: 510; line-height: 1.25; margin-top: 1.2em; }
+.tiptap h2 { font-size: 1.3rem; font-weight: 510; line-height: 1.3; margin-top: 1.1em; }
+.tiptap h3 { font-size: 1.1rem; font-weight: 510; line-height: 1.35; margin-top: 1em; }
+.tiptap ul, .tiptap ol { padding-left: 1.4rem; }
+.tiptap ul { list-style: disc; }
+.tiptap ol { list-style: decimal; }
+.tiptap li > p { margin: 0; }
+.tiptap blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.9rem;
+  color: var(--muted-foreground);
+}
+.tiptap code {
+  background: var(--muted);
+  border-radius: 0.35rem;
+  padding: 0.1em 0.35em;
+  font-size: 0.875em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.tiptap pre {
+  background: var(--muted);
+  border-radius: 0.6rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+}
+.tiptap pre code { background: none; padding: 0; }
+.tiptap hr { border: 0; border-top: 1px solid var(--border); margin: 1.2em 0; }
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* macOS overlay title bar. The sidebar is a bordered panel that starts at the top of the window, with the traffic
+   lights inside it. The sidebar button stays in a fixed spot: the sidebar's right edge when open, beside the lights when closed. */
+:root { --titlebar-h: 3rem; --tabstrip-h: 2.5rem; }
+.mac-titlebar, .mac-trigger, .mac-titlebar-spacer { display: none; }
+html.is-mac .mac-titlebar { display: block; position: fixed; inset: 0 0 auto 0; height: var(--titlebar-h); }
+html.is-mac .mac-trigger {
+  display: flex; position: fixed; top: 0.5rem; z-index: 50; height: 2rem; align-items: center;
+  left: 5rem; transition: left 200ms linear;
+}
+html.is-mac body:has([data-slot="sidebar"][data-state="expanded"]) .mac-trigger { left: calc(16rem - 2.5rem); }
+html.is-mac .mac-titlebar-spacer { display: block; height: 1.5rem; }
+html.is-mac .mac-hide { display: none; }
+html.is-mac [data-slot="sidebar-inner"] { border-radius: 1rem; box-shadow: 0 0 0 1px var(--sidebar-border); }
+/* With the sidebar closed, the traffic lights and the sidebar button sit on the page card's top row, so the tab strip
+   starts after them and never lies under the button. */
+html.is-mac [data-slot="sidebar"][data-state="collapsed"] ~ [data-slot="sidebar-inset"] .tab-strip { left: 6.5rem; padding-left: 0.25rem; }
+
+/* Translucent macOS window: the native blur shows through the window frame and the sidebar. The page card and
+   the first-run screens stay solid. */
+html.is-mac, html.is-mac body, html.is-mac #root { background: transparent; }
+html.is-mac [data-slot="sidebar-wrapper"] { background: transparent; }
+html.is-mac [data-slot="sidebar-inner"] { background: transparent; }
+/* "Translucent window" turned off: the sidebar and the frame go solid. */
+html.is-mac.solid-window, html.is-mac.solid-window body, html.is-mac.solid-window #root,
+html.is-mac.solid-window [data-slot="sidebar-wrapper"], html.is-mac.solid-window [data-slot="sidebar-inner"] { background: var(--sidebar); }
+.solid-screen { background: var(--background); }
+
+/* Accent color: buttons, checkmarks and focus rings. Statuses keep their own colors. Neutral sets nothing. */
+html[data-accent] {
+  --primary: oklch(0.56 0.19 var(--accent-h));
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.7 0.12 var(--accent-h));
+  --sidebar-primary: var(--primary);
+  --sidebar-ring: var(--ring);
+}
+html.dark[data-accent] { --primary: oklch(0.66 0.18 var(--accent-h)); }
+
+/* No scrollbars anywhere: pages, panels and lists still scroll with the trackpad, wheel and keyboard. */
+* { scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; }
+[data-slot="scroll-area-scrollbar"] { display: none; }
+
+/* No focus outlines anywhere. */
+*:focus, *:focus-visible { outline: none; }
+
+/* A page that must fit the window (the calendar grid) instead of growing and scrolling the whole page. */
+.fit-page { height: calc(100svh - 1rem); }
+
+/* Dotted "desk" behind the notes sheet; the reference board draws the same dots itself so they follow the zoom. */
+.dot-bg {
+  background-image: radial-gradient(circle, var(--border) 1px, transparent 1.2px);
+  background-size: 24px 24px;
+}
+
+/* After Effects is open on a project: a soft ring that spreads out from the dot, and light sweeping along the bar. */
+@keyframes live-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--c) 70%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 7px transparent; }
+}
+@keyframes live-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(400%); }
+}
+.live-ring { animation: live-ring 1.8s ease-out infinite; }
+.live-shimmer {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+  animation: live-shimmer 2.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-ring, .live-shimmer { animation: none; }
+}

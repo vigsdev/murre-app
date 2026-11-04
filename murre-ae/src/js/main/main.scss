@@ -1,0 +1,64 @@
+// Layout and the few pieces Mantine does not provide. Colours come from Mantine's variables, so they follow the light/dark scheme.
+.sx {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--mantine-color-text);
+  font-family: var(--mantine-font-family);
+  font-size: var(--mantine-font-size-sm);
+  line-height: var(--mantine-line-height-sm);
+  text-align: left;
+
+  h1,
+  h2 {
+    margin: 0;
+  }
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+.sx-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sx-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mantine-color-dimmed);
+  opacity: 0.6;
+  &[data-on="true"] {
+    background: var(--mantine-color-teal-5);
+    opacity: 1;
+  }
+}
+
+// A section under the buttons, set off by a thin line.
+.sx-block {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.versions {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 8px;
+  li {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--mantine-color-default-border);
+    overflow-wrap: anywhere;
+  }
+  li:last-child {
+    border-bottom: 0;
+  }
+}

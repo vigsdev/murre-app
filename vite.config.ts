@@ -1,0 +1,43 @@
+import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite"
+import path from "path"
+import react from "@vitejs/plugin-react";
+import process from "node:process";
+const host = process.env.TAURI_DEV_HOST;
+
+// https://vite.dev/config/
+export default defineConfig(() => ({
+  plugins: [react(), tailwindcss()],
+  // Scan only the app's own entry for dependencies. By default Vite scans every .html file under the project,
+  // which includes murre-ae/ (its own React and Node-style imports) and ends up with two copies of React.
+  optimizeDeps: {
+    entries: ["index.html"],
+  },
+   resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+
+  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
+  //
+  // 1. prevent Vite from obscuring rust errors
+  clearScreen: false,
+  // 2. tauri expects a fixed port, fail if that port is not available
+  server: {
+    port: 1420,
+    strictPort: true,
+    host: host || false,
+    hmr: host
+      ? {
+          protocol: "ws",
+          host,
+          port: 1421,
+        }
+      : undefined,
+    watch: {
+      // 3. tell Vite to ignore watching `src-tauri`
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+}));

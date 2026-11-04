@@ -1,0 +1,84 @@
+# Builds Murre for Apple Silicon and puts it in a draft GitHub release, with the files the updater reads.
+#
+# Starts when a tag like v0.2.0 is pushed. Make the tag with `npm run release -- 0.2.0 "What changed."`
+# (see RELEASING.md). Nobody gets the update until you publish the draft on GitHub.
+#
+# Needs two repository secrets: TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest # Apple Silicon
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag must match the version inside the app, or the updater would offer the wrong number.
+      # Its message becomes the release notes shown in the update dialog.
+      - name: Check version and read notes
+        id: meta
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "$tag" != "v$conf" ]; then
+            echo "::error::Tag $tag doesn't match version $conf in src-tauri/tauri.conf.json."
+            exit 1
+          fi
+          if grep -q PASTE_PUBLIC_KEY_HERE src-tauri/tauri.conf.json; then
+            echo "::error::The updater public key isn't in src-tauri/tauri.conf.json yet. See RELEASING.md."
+            exit 1
+          fi
+          # Checkout drops tag messages, so fetch the tag itself.
+          git fetch --force origin "refs/tags/$tag:refs/tags/$tag"
+          {
+            echo "notes<<MURRE_NOTES_END"
+            git for-each-ref "refs/tags/$tag" --format='%(contents)'
+            echo "MURRE_NOTES_END"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # FFmpeg isn't in git. Building it takes a few minutes, so keep the result until the script changes.
+      - name: Cache FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/make-ffmpeg.sh') }}
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: scripts/make-ffmpeg.sh
+
+      - name: Install packages
+        run: npm ci
+
+      - name: Build and upload
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: npm run tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: Murre ${{ github.ref_name }}
+          releaseBody: ${{ steps.meta.outputs.notes }}
+          releaseDraft: true
+          prerelease: false

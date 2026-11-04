@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "aep": {
+    "projectId": "11111111-2222-3333-4444-555555555555",
+    "path": "01 AE/film_v01.aep",
+    "name": "film_v01.aep"
+  },
+  "lastScanAt": "2026-10-26T12:00:00.000Z",
+  "comps": [
+    {
+      "id": 1,
+      "name": "Main",
+      "width": 1920,
+      "height": 1080,
+      "pixelAspect": 1,
+      "frameRate": 25,
+      "duration": 10,
+      "folder": "Comps",
+      "main": false
+    },
+    {
+      "id": 2,
+      "name": "Pre",
+      "width": 1920,
+      "height": 1080,
+      "pixelAspect": 1,
+      "frameRate": 25,
+      "duration": 4.5,
+      "folder": "",
+      "main": false
+    }
+  ]
+}
