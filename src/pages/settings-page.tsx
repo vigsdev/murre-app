@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { useStartup } from "@/features/startup/use-startup"
 import { Skeleton } from "@/components/ui/skeleton"
 import { FolderSetupEditor } from "@/features/settings/folder-setup"
-import { CompanionInstallCard, useCompanionInstall } from "@/features/companion/companion-install"
+import { CompanionInstallCard, canInstallCompanion, useCompanionInstall } from "@/features/companion/companion-install"
 import { useProfile, useProfileContext } from "@/features/profile/profile-context"
 import { prepareAvatar } from "@/lib/image"
 import { ACCENTS, useAccent, useFontPreviews, useTranslucent } from "@/lib/preferences"
@@ -303,7 +303,7 @@ function CompanionSection() {
   return (
     <Section id="companion" title="After Effects Companion" description="The panel inside After Effects that scans projects and copies their files.">
       <CompanionInstallCard state={companion} bare />
-      <Row
+      {canInstallCompanion && <Row
         title="Companion not showing up?"
         htmlFor="cep-debug"
         description={
@@ -326,7 +326,7 @@ function CompanionSection() {
           disabled={debugMode === null}
           onCheckedChange={(v) => void toggleDebug(v === true)}
         />
-      </Row>
+      </Row>}
     </Section>
   )
 }

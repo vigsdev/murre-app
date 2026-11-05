@@ -2,6 +2,10 @@ import { CheckCircle2, CircleAlert } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { api, errorMessage, type CompanionInstall } from "@/lib/tauri"
+import { isWindows } from "@/lib/platform"
+
+/** Murre can install the Companion itself only on macOS for now. */
+export const canInstallCompanion = !isWindows
 
 /** Whether the Companion is in After Effects' extension folder, and installing it. */
 export function useCompanionInstall() {
@@ -36,6 +40,22 @@ export function useCompanionInstall() {
 export function CompanionInstallCard({ state, bare }: { state: ReturnType<typeof useCompanionInstall>; bare?: boolean }) {
   const { status, error, busy, install, ready } = state
   const needsUpdate = !!status?.installed && !status.current
+  if (!canInstallCompanion) {
+    return (
+      <div className={bare ? "flex flex-col gap-3 p-4" : "flex flex-col gap-3 rounded-lg border p-4"} data-testid="companion-card">
+        <p className="flex items-start gap-2 text-sm">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span>
+            Murre can’t install the Companion on Windows yet.
+            <span className="block text-muted-foreground">
+              Projects, notes, renders and everything else in Murre work without it. Installing it from here is coming in a
+              later version.
+            </span>
+          </span>
+        </p>
+      </div>
+    )
+  }
   return (
     <div className={bare ? "flex flex-col gap-3 p-4" : "flex flex-col gap-3 rounded-lg border p-4"} data-testid="companion-card">
       {ready ? (

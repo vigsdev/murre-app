@@ -331,6 +331,10 @@ pub struct MediaTools {
 /// True when the program starts and answers `-version`. The stand-ins that a checkout without the real tools gets
 /// exit with an error, so they count as "not there".
 fn runs(path: &Path) -> bool {
+    // Never start something that isn't a program: on Windows that pops up a system error box.
+    if !crate::platform::is_program(path) {
+        return false;
+    }
     crate::platform::command(path)
         .arg("-version")
         .stdin(Stdio::null())
@@ -379,7 +383,7 @@ pub fn find_tool(name: &str) -> Option<PathBuf> {
     }
     dirs.into_iter()
         .map(|d| d.join(&file))
-        .find(|p| fs::metadata(p).is_ok_and(|m| m.is_file()))
+        .find(|p| crate::platform::is_program(p))
 }
 
 pub fn media_tools() -> MediaTools {

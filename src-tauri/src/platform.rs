@@ -25,6 +25,21 @@ pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
     dunce::canonicalize(path)
 }
 
+/// Whether `path` looks like a program this system can start. On Windows a file must begin with the `MZ` header of
+/// a Windows program: starting anything else makes Windows show an "Unsupported 16-Bit Application" message box,
+/// which is what Murre's own FFmpeg stand-ins (plain text) did. Elsewhere: it is a file.
+pub fn is_program(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    if cfg!(windows) {
+        use std::io::Read;
+        let mut head = [0u8; 2];
+        return std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_ok() && &head == b"MZ";
+    }
+    true
+}
+
 /// A program's file name on this system: `ffmpeg` on macOS, `ffmpeg.exe` on Windows.
 pub fn exe_name(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
@@ -49,6 +64,18 @@ mod tests {
         let p = canonicalize(d.path()).unwrap();
         assert!(!p.to_string_lossy().starts_with(r"\\?\"), "{}", p.display());
         assert!(p.is_absolute());
+    }
+
+    #[test]
+    fn text_files_are_not_programs_on_windows() {
+        let d = tempfile::tempdir().unwrap();
+        let stand_in = d.path().join("ffmpeg.exe");
+        std::fs::write(&stand_in, "#!/bin/sh\nexit 1\n").unwrap();
+        assert_eq!(is_program(&stand_in), !cfg!(windows));
+        assert!(!is_program(&d.path().join("missing.exe")));
+        assert!(!is_program(d.path()), "a folder is not a program");
+        // The test binary itself is a real program on every system.
+        assert!(is_program(&std::env::current_exe().unwrap()));
     }
 
     #[test]

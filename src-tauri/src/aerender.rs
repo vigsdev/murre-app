@@ -149,7 +149,7 @@ pub fn validate(path: &Path) -> AppResult<String> {
     if !path.is_file() {
         return invalid(format!("{} does not exist.", path.display()));
     }
-    if !is_executable(path) {
+    if !is_executable(path) || !crate::platform::is_program(path) {
         return invalid(format!("{} is not executable.", path.display()));
     }
     let mut child = crate::platform::command(path)
