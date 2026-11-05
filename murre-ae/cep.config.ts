@@ -4,8 +4,11 @@ import { version } from "./package.json";
 // The ZXP is signed with a self-signed certificate that is made fresh on every signed build, so this password only
 // protects that throwaway certificate. It is kept out of the repo anyway: set it when signing, e.g.
 //   MURRE_ZXP_PASSWORD='any-password' npm run bundle:signed
-const zxpPassword = process.env.MURRE_ZXP_PASSWORD;
-if (process.env.ZXP_PACKAGE === "true" && !zxpPassword) {
+// This file is also bundled into the panel and into the ExtendScript that runs inside After Effects (through
+// src/shared/shared.ts), where there is no `process`. `typeof` is the one check that doesn't throw there.
+const env: Record<string, string | undefined> = typeof process !== "undefined" && process.env ? process.env : {};
+const zxpPassword = env.MURRE_ZXP_PASSWORD;
+if (env.ZXP_PACKAGE === "true" && !zxpPassword) {
   throw new Error(
     "Set MURRE_ZXP_PASSWORD to sign the Companion. Any password works: the certificate is made fresh on each build.",
   );
