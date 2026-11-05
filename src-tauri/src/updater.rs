@@ -75,6 +75,35 @@ fn prompt_text(version: &str, notes: Option<&str>) -> String {
     }
 }
 
+/// Where the full error ends up, for the messages below.
+const DETAILS: &str = "If it keeps happening, Settings → About → Copy report has the details.";
+
+/// What a failed check says. The raw error goes to the log; people get a plain sentence.
+fn check_failed_text(e: &tauri_plugin_updater::Error, current: &str) -> String {
+    use tauri_plugin_updater::Error as E;
+    match e {
+        // Every address answered without an update file: none is published yet, or the site is having a moment.
+        E::ReleaseNotFound => format!("Couldn’t find a newer Murre online. You have Murre {current}.\n\nIf you were expecting an update, try again later."),
+        E::Reqwest(_) | E::Network(_) => "Couldn’t reach the update server. Check your internet connection, then try again.".into(),
+        E::TargetNotFound(_) | E::TargetsNotFound(_) => "There’s a newer Murre, but not for this computer yet.".into(),
+        E::Serialization(_) | E::Semver(_) => format!("The update information online couldn’t be read, so nothing was changed.\n\n{DETAILS}"),
+        _ => format!("Couldn’t check for updates right now. Murre is fine as it is.\n\n{DETAILS}"),
+    }
+}
+
+/// What a failed install says. Murre replaces itself only after the download is checked, so the current copy stays.
+fn install_failed_text(e: &tauri_plugin_updater::Error) -> String {
+    use tauri_plugin_updater::Error as E;
+    let reason = match e {
+        E::Reqwest(_) | E::Network(_) => "The download stopped. Check your internet connection, then try again.".to_string(),
+        E::Minisign(_) | E::Base64(_) | E::SignatureUtf8(_) => {
+            "The download didn’t pass Murre’s safety check, so it wasn’t installed.".to_string()
+        }
+        _ => DETAILS.to_string(),
+    };
+    format!("The update didn’t install. Your current Murre is untouched.\n\n{reason}")
+}
+
 fn parent(app: &AppHandle) -> Option<WebviewWindow> {
     // With a parent window the alert shows Murre's icon, not a generic one.
     app.get_webview_window("main")
@@ -146,8 +175,14 @@ pub fn check(app: AppHandle, manual: bool) {
                 BUSY.store(false, Ordering::SeqCst);
                 applog::warn("updater", &format!("Update check failed: {e}"));
                 if manual {
-                    let text = format!("Couldn’t check for updates. Murre is fine as it is.\n\n{e}");
-                    dialog(&app, MessageDialogKind::Error, "Murre", text).show(|_| {});
+                    let current = app.package_info().version.to_string();
+                    // Not finding a newer release isn't a fault, so it gets the calm icon.
+                    let kind = if matches!(e, tauri_plugin_updater::Error::ReleaseNotFound) {
+                        MessageDialogKind::Info
+                    } else {
+                        MessageDialogKind::Warning
+                    };
+                    dialog(&app, kind, "Murre", check_failed_text(&e, &current)).show(|_| {});
                 }
             }
         }
@@ -183,8 +218,7 @@ async fn install_update(app: AppHandle, update: tauri_plugin_updater::Update) {
         Err(e) => {
             BUSY.store(false, Ordering::SeqCst);
             applog::warn("updater", &format!("Update failed: {e}"));
-            let text = format!("The update didn’t install. Your current Murre is untouched.\n\n{e}");
-            dialog(&app, MessageDialogKind::Error, "Murre", text).show(|_| {});
+            dialog(&app, MessageDialogKind::Error, "Murre", install_failed_text(&e)).show(|_| {});
         }
     }
 }
@@ -198,6 +232,21 @@ mod tests {
         assert_eq!(prompt_text("0.2.0", None), "Murre 0.2.0 is ready.");
         assert_eq!(prompt_text("0.2.0", Some("  \n ")), "Murre 0.2.0 is ready.");
         assert_eq!(prompt_text("0.2.0", Some(" Fixes the calendar. ")), "Murre 0.2.0 is ready.\n\nFixes the calendar.");
+    }
+
+    #[test]
+    fn failures_get_plain_sentences_not_raw_errors() {
+        use tauri_plugin_updater::Error as E;
+        let none = check_failed_text(&E::ReleaseNotFound, "0.1.1");
+        assert!(none.contains("Couldn’t find a newer Murre online") && none.contains("Murre 0.1.1"), "{none}");
+        assert!(!none.contains("JSON"));
+        assert!(check_failed_text(&E::Network("timed out".into()), "0.1.1").contains("internet connection"));
+        assert!(check_failed_text(&E::TargetNotFound("darwin-aarch64".into()), "0.1.1").contains("not for this computer"));
+        assert!(check_failed_text(&E::EmptyEndpoints, "0.1.1").contains("Copy report"));
+
+        let bad_sig = install_failed_text(&E::SignatureUtf8("x".into()));
+        assert!(bad_sig.starts_with("The update didn’t install. Your current Murre is untouched.") && bad_sig.contains("safety check"));
+        assert!(install_failed_text(&E::Network("reset".into())).contains("download stopped"));
     }
 
     #[test]
