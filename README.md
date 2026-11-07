@@ -18,6 +18,33 @@ It runs on your Mac only. No account, no cloud, works offline.
 - **Footage.** Finds footage that lives outside the project folder and copies it in, then relinks it. Originals stay where they are.
 - **Home, Calendar and Spaces.** What's due, what's in progress, and your own groups of projects.
 
+## Installing
+
+Download the latest version from [Releases](https://github.com/vigsdev/murre-app/releases): the `.dmg` for a Mac with Apple Silicon, the `.exe` for Windows.
+
+### "Apple cannot check it" and "Windows protected your PC"
+
+Murre isn't signed by Apple or Microsoft yet. Signing costs a yearly fee, and Murre is a free side project for now. The app is safe to open, but your computer can't confirm who made it, so it warns you the first time. You only need to do this once. Updates install without the warning.
+
+**On a Mac**
+
+1. Drag Murre into Applications and open it. macOS says it can't check Murre. Press **Done** (or **OK**).
+2. Open **System Settings → Privacy & Security** and scroll down. Next to "Murre was blocked", press **Open Anyway**, then confirm with your password or Touch ID.
+3. Murre opens, and from now on it opens normally.
+
+If macOS instead says Murre **"is damaged and can't be opened"**, the download was marked as untrusted. Run this once in Terminal, then open Murre again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Murre.app
+```
+
+**On Windows**
+
+1. Run the installer. A blue window says "Windows protected your PC".
+2. Press **More info**, then **Run anyway**.
+
+Your browser may also warn that the file "isn't commonly downloaded". Choose **Keep** (in Edge: **…** → **Keep** → **Show more** → **Keep anyway**).
+
 ## How it's put together
 
 | Folder | What's in it |
@@ -101,15 +128,22 @@ After changing dependencies, refresh the credits list shown in Settings with `no
 ## Known limits
 
 - **Apple Silicon only, for now.** The Intel and universal FFmpeg files in `src-tauri/binaries/` are placeholders. Run `scripts/make-ffmpeg.sh --both` to build them.
-- **The app isn't signed by Apple.** macOS will warn on first open. It also uses a private macOS feature for the translucent window, which rules out the Mac App Store.
+- **The app isn't signed by Apple or Microsoft.** Both warn on first open (see [Installing](#installing)). On the Mac it also uses a private macOS feature for the translucent window, which rules out the Mac App Store.
 - **The release Companion still opens debug ports** (8860, 8861). Turn off the debug file in its build config before shipping.
 - **Not everything has been checked in a real After Effects.** [FROM-CLAUDE.md](FROM-CLAUDE.md) says which parts have been and which haven't.
 
 ## More reading
 
+- [CHANGELOG.md](CHANGELOG.md): what changed in each version
 - [MURRE-PRODUCT-BRIEF.md](MURRE-PRODUCT-BRIEF.md): what Murre is, who it's for, and what works today
 - [FROM-CLAUDE.md](FROM-CLAUDE.md): notes on each feature, how it behaves, and what's unverified
 - [RELEASING.md](RELEASING.md): making a release and how updates reach people
 - [TESTER-GUIDE.md](TESTER-GUIDE.md): for people trying a build
 - [THIRD-PARTY.md](THIRD-PARTY.md): third-party data and FFmpeg licensing
 - [murre-ae/MURRE-COMPANION.md](murre-ae/MURRE-COMPANION.md): how the Companion works
+
+## License
+
+Murre is free software under the [GNU General Public License v3.0](LICENSE). You can use it, share it and change it. If you share a changed version, it has to stay under the same license, with its source available.
+
+Some parts come from others and keep their own licenses: see [THIRD-PARTY.md](THIRD-PARTY.md).

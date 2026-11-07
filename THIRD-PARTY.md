@@ -15,3 +15,8 @@ The programs are linked statically and are not modified. The exact source is the
 by `FFMPEG_VERSION` in `scripts/make-ffmpeg.sh`, and the configure options used are in that script, so the same build can
 be made again. You can swap in your own build by replacing `ffmpeg` and `ffprobe` inside `Murre.app/Contents/MacOS`.
 LGPL text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+## Adobe CEP files
+
+The files in `murre-ae/src/js/lib/cep/` (`CSInterface`, `Vulcan` and their type definitions) are Adobe's, from
+https://github.com/Adobe-CEP/CEP-Resources, and are covered by Adobe's own terms in their headers, not by Murre's license.
