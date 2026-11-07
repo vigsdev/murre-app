@@ -8,6 +8,8 @@ export interface ProjectLink {
   root: string;
   projectId: string;
   projectName: string;
+  /** The project's status as stored in `project.json` ("not_started", "in_progress"…). */
+  status: string;
   /** The AEP's path relative to `root`, always with "/" separators. */
   aepPath: string;
 }
@@ -75,6 +77,7 @@ export function findProject(io: Io, aepFile: string): LinkResult {
           root: dir,
           projectId: v.id,
           projectName: v.name,
+          status: typeof v.status === "string" ? v.status : "not_started",
           aepPath: toPosix(path.relative(dir, aepFile)),
         },
       };

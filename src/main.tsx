@@ -26,6 +26,16 @@ for (const ev of ["dragover", "drop"] as const) {
   })
 }
 
+// No browser right-click menu ("Open Link", "Download Linked File"…): this is an app, not a web page. Text fields
+// keep theirs for Cut, Copy, Paste and spelling. Screens with their own menu (the reference board) handle it
+// themselves. In a development build, hold Option (Alt) while right-clicking to get it back, for Inspect Element.
+window.addEventListener("contextmenu", (e) => {
+  if (import.meta.env.DEV && e.altKey) return
+  const t = e.target
+  if (t instanceof Element && t.closest("input, textarea, [contenteditable]:not([contenteditable='false'])")) return
+  e.preventDefault()
+})
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>

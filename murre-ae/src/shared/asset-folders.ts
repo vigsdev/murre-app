@@ -8,6 +8,8 @@ export const ASSETS_DIR = "02 Assets";
 export const COMPS_BIN = "01 Comps";
 export const PRECOMPS_BIN = "Precomps";
 export const SOLIDS_BIN = "Solids";
+/** Where imported After Effects projects go, inside the assets bin, when the folder setup has no templates folder. */
+export const TEMPLATES_BIN = "05 Templates";
 
 /** One sub-folder of the assets folder and the file types that go into it. */
 export interface AssetFolderRule {
@@ -38,4 +40,11 @@ export function assetSubfolder(fileName: string, rules?: AssetFolderRule[] | nul
     for (let j = 0; j < exts.length; j++) if (exts[j] === ext) return list[i].folder;
   }
   return null;
+}
+
+/** The templates folder of a folder setup: the first one with "template" in its name, else the default. */
+export function templatesFolder(rules?: AssetFolderRule[] | null): string {
+  const list = rules ? rules : [];
+  for (let i = 0; i < list.length; i++) if (/template/i.test(list[i].folder)) return list[i].folder;
+  return TEMPLATES_BIN;
 }

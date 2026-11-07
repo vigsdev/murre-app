@@ -1,7 +1,7 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { FolderSearch, PackageOpen, TriangleAlert } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
-import { Link, useParams } from "react-router"
+import { Link, useParams, useSearchParams } from "react-router"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
@@ -63,6 +63,9 @@ export function ProjectDetailPage() {
   const [tokens, setTokens] = useState({ colors: 0, expressions: 0, fonts: 0, environment: 0, comps: 0, footage: 0, files: 0 })
   const { rescan } = useSync()
   const [packaging, setPackaging] = useState(false)
+  // `?package=1` comes from the Companion panel's Package button.
+  const [search, setSearch] = useSearchParams()
+  const askedToPackage = search.get("package") === "1"
 
   useEffect(() => {
     let cancelled = false
@@ -77,6 +80,15 @@ export function ProjectDetailPage() {
   }, [id])
 
   const project = state.status === "ready" ? state.project : null
+
+  useEffect(() => {
+    if (!askedToPackage || !project) return
+    if (project.available) setPackaging(true)
+    setSearch((s) => {
+      s.delete("package")
+      return s
+    }, { replace: true })
+  }, [askedToPackage, project, setSearch])
 
   // Remember that this project was just opened, for Home's list of recent projects.
   const openedId = project?.id

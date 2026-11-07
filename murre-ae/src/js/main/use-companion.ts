@@ -16,6 +16,9 @@ import { host, trash } from "./host";
 import { handleCreateStarter, handleImportImage, handleReveal, handleSaveAs, handleInspect, PANEL_BEAT_EVENT, PANEL_BEAT_MS } from "../lib/murre/starter-flow";
 import { csi } from "../lib/utils/bolt";
 import { CSEvent } from "../lib/cep/csinterface";
+import { child_process, os, path as nodePath } from "../lib/cep/node";
+import { APP_IDENTIFIER } from "../lib/murre/bridge-client";
+import { RENDER_FOLDERS, type RenderKind } from "../../shared/render-folders";
 
 export type LinkState =
   | { kind: "checking" }
@@ -39,6 +42,7 @@ export type RelinkState =
   | { kind: "failed"; message: string };
 
 const POLL_MS = 4000;
+const newId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const reportOf = (link: LinkState, scan: ScanState, relink: RelinkState) => ({
   source: "panel" as const,
   aepPath: link.kind === "linked" ? link.info.path : link.kind === "none" ? link.path : null,
@@ -46,6 +50,9 @@ const reportOf = (link: LinkState, scan: ScanState, relink: RelinkState) => ({
   scanning: scan.kind === "running" || relink.kind === "running",
   activity: scan.kind === "running" ? ("scan" as const) : relink.kind === "running" ? ("relink" as const) : null,
 });
+
+/** The last "Add to Render Queue". */
+export type QueueState = { kind: "idle" } | { kind: "busy" } | { kind: "done"; comp: string; file: string; at: number } | { kind: "failed"; message: string; at: number };
 
 export interface AddProjectState {
   /** The request this panel sent, so answers to someone else's request are not mixed in. */
@@ -66,6 +73,9 @@ export function useCompanion() {
   const [notice, setNotice] = useState<string | null>(null);
   const [assets, setAssets] = useState<AssetsFile | null>(null);
   const [relink, setRelink] = useState<RelinkState>({ kind: "idle" });
+  const [queue, setQueue] = useState<QueueState>({ kind: "idle" });
+  /** A Murre or Package click made while the app was still starting: sent once it connects. */
+  const pendingShow = useRef<{ projectId: string | null; open: "package" | null } | null>(null);
   /** The linked project's settings (the app's Settings tab shows the same file); null when no project is linked. */
   const [settings, setSettings] = useState<ProjectSettings | null>(null);
   const lastPath = useRef<string | null>(null);
@@ -339,7 +349,15 @@ export function useCompanion() {
   // Connect to the desktop app (if it is running) and keep trying.
   useEffect(() => {
     const { client, why } = createBridge({
-      onConnection: setAppLinked,
+      onConnection: (on) => {
+        setAppLinked(on);
+        const p = pendingShow.current;
+        if (on && p) {
+          pendingShow.current = null;
+          // Straight after connecting the socket is open; send on the next tick so the greeting goes first.
+          window.setTimeout(() => bridge.current?.sendShowApp(newId(), p.projectId, p.open), 0);
+        }
+      },
       onDetail: setAppLinkDetail,
       onCommand,
       currentState: () => reportOf(linkRef.current, scanRef.current, relinkRef.current),
@@ -379,11 +397,42 @@ export function useCompanion() {
     [link, loadComps],
   );
 
+  /** Queue the active composition, rendering into the linked project's P / R / D folder. */
+  const queueRender = useCallback(async (kind: RenderKind) => {
+    const cur = linkRef.current;
+    if (cur.kind !== "linked") return;
+    setQueue({ kind: "busy" });
+    try {
+      const r = await evalTS("addActiveCompToQueue", nodePath.join(cur.link.root, RENDER_FOLDERS[kind]));
+      setQueue(r.ok ? { kind: "done", comp: r.comp, file: r.file, at: Date.now() } : { kind: "failed", message: r.message, at: Date.now() });
+    } catch (e) {
+      setQueue({ kind: "failed", message: `Could not talk to After Effects: ${messageOf(e)}`, at: Date.now() });
+    }
+  }, []);
+
+  /**
+   * Bring the Murre app forward; with `open: "package"`, on the linked project with its Package window open. When the app is not running it is
+   * started (macOS) and the request is sent once it connects. Returns a sentence when that can't be done.
+   */
+  const showApp = useCallback((open: "package" | null = null): string | null => {
+    const cur = linkRef.current;
+    const projectId = cur.kind === "linked" ? cur.link.projectId : null;
+    if (bridge.current?.sendShowApp(newId(), projectId, open)) return null;
+    if (os.platform() !== "darwin") return "Open the Murre app first.";
+    try {
+      child_process.execFile("open", ["-b", APP_IDENTIFIER], { timeout: 15000 }, () => {});
+      pendingShow.current = { projectId, open };
+      return null;
+    } catch (e) {
+      return `Couldn't open Murre: ${messageOf(e)}`;
+    }
+  }, []);
+
   /** Ask the app to build a Murre project around the project that is open in After Effects. */
   const addProject = useCallback((name: string, parentDir: string, versionNames: string[] = []) => {
     const client = bridge.current;
     if (!client) return false;
-    const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const requestId = newId();
     setAddState({ requestId, text: "Sending to Murre…", done: false, ok: true });
     client.sendAddProject(requestId, name, parentDir, versionNames);
     return true;
@@ -393,11 +442,34 @@ export function useCompanion() {
   const listVersions = useCallback(() => {
     const client = bridge.current;
     if (!client) return;
-    const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const requestId = newId();
     versionsRequest.current = requestId;
     setVersions(null);
     client.sendListVersions(requestId);
   }, []);
 
-  return { addState, addProject, versions: versions?.files ?? null, listVersions, link, comps, compsError, scan, notice, settings, appLinked, appLinkDetail, refresh, startScan, cancelScan, setMain, assets, relink, startRelink };
+  return {
+    addState,
+    addProject,
+    versions: versions?.files ?? null,
+    listVersions,
+    link,
+    comps,
+    compsError,
+    scan,
+    notice,
+    settings,
+    appLinked,
+    appLinkDetail,
+    refresh,
+    startScan,
+    cancelScan,
+    setMain,
+    assets,
+    relink,
+    startRelink,
+    queue,
+    queueRender,
+    showApp,
+  };
 }

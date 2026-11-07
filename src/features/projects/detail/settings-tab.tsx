@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { trashName } from "@/lib/platform"
 import { api, errorMessage, type ProjectSettings } from "@/lib/tauri"
 
 const INTERVALS = [
@@ -99,10 +100,10 @@ export function SettingsTab({ projectId }: { projectId: string }) {
         />
         <div className="flex flex-col gap-1">
           <FieldLabel htmlFor="trash-originals" className="font-normal">
-            Move the original files to the Trash after they are copied
+            Move the original files to the {trashName} after they are copied
           </FieldLabel>
           <FieldDescription>
-            Each original is moved only after its copy in the project is checked. They go to the Trash, not deleted, so you can
+            Each original is moved only after its copy in the project is checked. They go to the {trashName}, not deleted, so you can
             put them back. Other projects that use the same file will lose it until you do.
             {!settings.copyRelinkOnScan && " Turn on automatic copying first."}
           </FieldDescription>

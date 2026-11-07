@@ -609,6 +609,39 @@ export interface CreateOutcome {
   /** Where the project that was open before was saved; it was closed. */
   previous: string | null
   message: string | null
+  /** The person pressed Cancel while Murre waited. */
+  cancelled: boolean
+}
+
+/** Where "Open After Effects and start" is, pushed as the `starter-progress` event. */
+export type StarterStage =
+  | { stage: "launching" }
+  | { stage: "waiting" }
+  | { stage: "needsYou" }
+  | { stage: "noCompanion" }
+  | { stage: "openYourself"; reason: "launchFailed" | "notStarted" | "closed" }
+  | { stage: "checking" }
+  | { stage: "confirm"; kind: "unsaved" | "saved" | "unknown"; name: string; desktopDir: string | null }
+  | { stage: "creating"; file: string }
+  | { stage: "creatingSlow"; file: string }
+
+/** What the last Apple Calendar sync did. `at` is Unix seconds. */
+export interface CalendarSyncReport {
+  at: number
+  created: number
+  updated: number
+  removed: number
+  error: string | null
+}
+
+/** Showing Murre's deadlines and events in Apple Calendar. */
+export interface CalendarSync {
+  /** Only on macOS. */
+  supported: boolean
+  enabled: boolean
+  /** Whether macOS lets Murre use Calendar. */
+  access: "full" | "notDetermined" | "denied" | "restricted" | "writeOnly" | "unsupported"
+  last: CalendarSyncReport | null
 }
 
 export interface CompanionInstall {
@@ -763,9 +796,28 @@ export const api = {
   listPremiereProjects: (path: string) => invoke<PremiereCandidate[]>("list_premiere_projects", { path }),
   /** Other `.aep` files saved next to the open project (`path` is its file), to offer as extra versions. */
   listOtherVersions: (path: string) => invoke<VersionCandidate[]>("list_other_versions", { path }),
-  createStarterInAfterEffects: (projectId: string, aerenderPath?: string | null) =>
-    invoke<CreateOutcome>("create_starter_in_after_effects", { projectId, aerenderPath: aerenderPath ?? null }),
+  /**
+   * Has After Effects make the project's first .aep. `alreadyAsked`: the person just agreed to have the open project
+   * saved and closed (New Project); otherwise Murre asks itself before closing anything.
+   */
+  createStarterInAfterEffects: (projectId: string, aerenderPath?: string | null, alreadyAsked = false) =>
+    invoke<CreateOutcome>("create_starter_in_after_effects", { projectId, aerenderPath: aerenderPath ?? null, alreadyAsked }),
   getCompanionInstall: () => invoke<CompanionInstall>("get_companion_install"),
+  /** Stop waiting for After Effects while it makes a project file. The project folder stays. */
+  starterCancel: () => invoke<void>("starter_cancel"),
+  /** "I've opened After Effects": Murre waits for it again. */
+  starterOpened: () => invoke<void>("starter_opened"),
+  /** Answer "save and close the project that's open in After Effects?". */
+  starterAnswer: (ok: boolean) => invoke<void>("starter_answer", { ok }),
+  /** Bring After Effects to the front (the running one, else the chosen version). */
+  showAfterEffects: (aerenderPath?: string | null) => invoke<void>("show_after_effects", { aerenderPath: aerenderPath ?? null }),
+  getCalendarSync: () => invoke<CalendarSync>("get_calendar_sync"),
+  /** Turning it on asks macOS for Calendar access the first time; it stays off if access isn't given. */
+  setCalendarSync: (enabled: boolean) => invoke<CalendarSync>("set_calendar_sync", { enabled }),
+  /** Deletes the "Murre" calendar (only that one) from Apple Calendar and turns syncing off. */
+  removeMurreCalendar: () => invoke<CalendarSync>("remove_murre_calendar"),
+  /** Opens System Settings at Privacy & Security → Calendars. */
+  openCalendarPrivacy: () => invoke<void>("open_calendar_privacy"),
   /** Whether After Effects is set to load panels it cannot verify. */
   getCompanionDebugMode: () => invoke<boolean>("get_companion_debug_mode"),
   /** Turns that setting on or off; returns how it is afterwards. */

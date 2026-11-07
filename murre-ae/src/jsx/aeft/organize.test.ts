@@ -116,4 +116,55 @@ describe("organizeProject", () => {
     expect(pathOf(missing)).toBe("02 Assets/02 Audios");
     expect(pathOf(stuck)).toBe("");
   });
+  it("moves an imported project's bin whole into Templates and sorts nothing inside it", () => {
+    // Like importing "Paper Transition.aep": its own bins, comps, footage and an empty bin.
+    const imported = folder("Paper Transition.aep");
+    const transitions = folder("Transitions", imported);
+    const t1 = folder("Transition 01", transitions);
+    const tComp = comp("Transition 01", 0, t1);
+    const pre = comp("Video Placeholder 01", 1, t1);
+    const other = folder("Other", t1);
+    const tex = file("paper.png", other);
+    const empty = folder("Spare", imported);
+    const empty2 = folder("Empty inside", other);
+    const main = comp("00 Main");
+    organizeProject();
+    expect(pathOf(imported)).toBe("02 Assets/05 Templates");
+    expect(pathOf(tComp)).toBe("02 Assets/05 Templates/Paper Transition.aep/Transitions/Transition 01");
+    expect(pathOf(pre)).toBe("02 Assets/05 Templates/Paper Transition.aep/Transitions/Transition 01");
+    expect(pathOf(tex)).toBe("02 Assets/05 Templates/Paper Transition.aep/Transitions/Transition 01/Other");
+    expect(items.includes(empty) && items.includes(empty2)).toBe(true); // its empty bins are kept
+    expect(pathOf(main)).toBe("01 Comps"); // the rest of the project is sorted as usual
+  });
+
+  it("does nothing the second time, and leaves things put into Templates by hand", () => {
+    folder("Paper Transition.aep");
+    comp("A", 0, folder("Inner", items[0] as any));
+    organizeProject();
+    const templates = items.find((i) => i.name === "05 Templates")!;
+    const handPlaced = comp("Loose template comp", 0, templates);
+    const handBin = folder("My presets", templates);
+    undoGroups = [];
+    expect(organizeProject()).toEqual({ moved: 0, failed: 0 });
+    expect(undoGroups).toEqual([]); // nothing to do: no undo step
+    expect(pathOf(handPlaced)).toBe("02 Assets/05 Templates");
+    expect(items.includes(handBin)).toBe(true); // an empty bin in Templates is kept
+  });
+
+  it("uses the folder setup's templates folder, handles .aepx and keeps a project inside another together", () => {
+    const outer = folder("Kit.AEPX");
+    const inner = folder("Nested.aep", outer);
+    const c = comp("C", 0, inner);
+    organizeProject([{ folder: "01 Images", exts: ["png"] }, { folder: "Templates & Kits", exts: [] }]);
+    expect(pathOf(outer)).toBe("02 Assets/Templates & Kits");
+    expect(pathOf(inner)).toBe("02 Assets/Templates & Kits/Kit.AEPX");
+    expect(pathOf(c)).toBe("02 Assets/Templates & Kits/Kit.AEPX/Nested.aep");
+  });
+
+  it("treats a bin that only mentions aep in its name as an ordinary bin", () => {
+    const notImported = folder("aep notes");
+    const c = comp("X", 0, notImported);
+    organizeProject();
+    expect(pathOf(c)).toBe("01 Comps");
+  });
 });

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { trashName } from "@/lib/platform"
 import { api, errorMessage, type CompanionStatus } from "@/lib/tauri"
 import { useCompanionStatus } from "./use-companion-status"
 
@@ -115,7 +116,7 @@ export function CompanionControl({ projectId, projectName, hideIdleLabel }: { pr
       if (l.activity === "relink") {
         if (l.kind === "done") {
           const bad = l.failed ? ` ${l.failed} could not be moved.` : ""
-          toast.success(`Copied ${(l.copied ?? 0) + (l.reused ?? 0)} files into the project and relinked ${l.items ?? 0} items.${l.trashed ? ` Moved ${l.trashed} originals to the Trash.` : ""} Save the project in After Effects.${bad}`)
+          toast.success(`Copied ${(l.copied ?? 0) + (l.reused ?? 0)} files into the project and relinked ${l.items ?? 0} items.${l.trashed ? ` Moved ${l.trashed} originals to the ${trashName}.` : ""} Save the project in After Effects.${bad}`)
         } else toast.error(l.message ?? "Copy & relink failed.")
       } else if (l.kind === "done") {
         recordGreetingEvent("scanned", projectName ?? null)

@@ -84,6 +84,24 @@ pub fn is_running() -> bool {
     }
 }
 
+/// The `.app` of a running After Effects, from a line of `ps` output.
+fn app_of(command: &str) -> Option<PathBuf> {
+    if !is_ae_process(command) {
+        return None;
+    }
+    let end = command.find(".app/Contents/MacOS/")? + ".app".len();
+    Some(PathBuf::from(&command[..end]))
+}
+
+/// The After Effects that is running now, if any (the first one found).
+pub fn running_app() -> Option<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let out = crate::platform::command("ps").args(["-axo", "command="]).output().ok()?;
+    String::from_utf8_lossy(&out.stdout).lines().find_map(app_of)
+}
+
 /// Start After Effects (or bring it forward) without opening a file.
 pub fn launch(app: &Path) -> AppResult<()> {
     if !cfg!(target_os = "macos") {
@@ -135,6 +153,11 @@ mod tests {
         assert!(is_ae_process("/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app/Contents/MacOS/After Effects"));
         assert!(is_ae_process("/Applications/Adobe After Effects (Beta)/Adobe After Effects (Beta).app/Contents/MacOS/After Effects (Beta)"));
         assert!(!is_ae_process("/Applications/Adobe After Effects 2026/aerender -project x"));
+        assert_eq!(
+            app_of("/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app/Contents/MacOS/After Effects -psn_0"),
+            Some(PathBuf::from("/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app"))
+        );
+        assert_eq!(app_of("/Applications/Adobe After Effects 2026/aerender -project x"), None);
         assert!(!is_ae_process("/Applications/Adobe After Effects 2026/Adobe After Effects Render Engine.app/Contents/MacOS/After Effects Render Engine"));
         assert!(!is_ae_process("/usr/bin/vim notes.txt"));
     }

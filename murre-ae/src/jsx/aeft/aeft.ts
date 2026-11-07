@@ -18,3 +18,4 @@ export const helloWorld = () => {
   app.project.activeItem;
 };
 export { revealUsage } from "./reveal";
+export { addActiveCompToQueue } from "./render-queue";

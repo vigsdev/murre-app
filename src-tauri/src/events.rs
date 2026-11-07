@@ -142,6 +142,13 @@ pub fn update(conn: &Connection, id: &str, input: &EventInput) -> AppResult<Even
     Ok(get(conn, id)?.expect("just updated"))
 }
 
+/// Every event, oldest first (for showing them in Apple Calendar).
+pub fn all(conn: &Connection) -> AppResult<Vec<Event>> {
+    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM events ORDER BY date, created_at, id LIMIT ?1"))?;
+    let rows = stmt.query_map([MAX_EVENTS], row)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {
     let n = conn.execute("DELETE FROM events WHERE id = ?1", [id])?;
     if n == 0 {

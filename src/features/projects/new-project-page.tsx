@@ -19,6 +19,7 @@ import { CompanionInstallCard, useCompanionInstall } from "@/features/companion/
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { defaultInstall, installName, useAeInstalls } from "./use-ae-installs"
 import { showInFileBrowser, baseName } from "@/lib/platform"
+import { StarterProgress, announceStarter, useStarter } from "./starter-progress"
 
 type FieldErrors = Partial<Record<"name" | "parentDir", string>>
 
@@ -49,6 +50,7 @@ export function NewProjectPage() {
   const [aePath, setAePath] = useState<string | null>(null)
   const [startWorking, setStartWorking] = useState(true)
   const [stage, setStage] = useState<string | null>(null)
+  const starter = useStarter()
   // Asked before anything is created, when After Effects has a project open that will be saved and closed.
   const [confirm, setConfirm] = useState<AeCheck | null>(null)
   const confirmAnswer = useRef<((ok: boolean) => void) | null>(null)
@@ -129,16 +131,10 @@ export function NewProjectPage() {
       })
       // The project exists now; a problem with After Effects is reported but never undoes it.
       if (start && install) {
-        setStage("Opening After Effects and creating the project… this can take a minute.")
+        setStage(null)
         try {
-          const outcome = await api.createStarterInAfterEffects(created.id, install.path)
-          if (outcome.added) {
-            toast.success(`Created ${baseName(outcome.added)} in After Effects`)
-            if (outcome.previous) toast.message(`Your previous After Effects project was saved at ${outcome.previous}`)
-          } else {
-            toast.error(outcome.message ?? "After Effects could not create the project.")
-            if (outcome.previous) toast.message(`Your previous After Effects project was saved at ${outcome.previous}`)
-          }
+          // The open project was asked about just above.
+          announceStarter(await starter.run(created.id, install.path, true), baseName)
         } catch (err) {
           toast.error(`Project made! After Effects couldn’t create the workfile, though: ${errorMessage(err)}`)
         }
@@ -296,6 +292,7 @@ export function NewProjectPage() {
             {stage}
           </p>
         )}
+        {starter.stage && <StarterProgress stage={starter.stage} aerenderPath={install?.path ?? null} />}
         {submitError && (
           <p role="alert" className="text-sm text-destructive">
             {submitError}

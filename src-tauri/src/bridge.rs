@@ -62,6 +62,8 @@ pub struct PanelState {
     pub reveal: Option<RevealOutcome>,
     /// The panel's latest "add this project to Murre" request.
     pub add_project: Option<AddProjectRequest>,
+    /// The panel's latest "bring Murre forward" request.
+    pub show_app: Option<ShowAppRequest>,
     /// Id of the panel's latest "which other versions are next to this project?" question.
     pub versions_request: Option<String>,
     /// Counts every finished scan or relink, so a caller can tell its own request ended.
@@ -93,6 +95,16 @@ pub struct AddProjectRequest {
     pub parent_dir: String,
     /// Other `.aep` files from beside the open project to bring along (file names).
     pub versions: Vec<String>,
+}
+
+/// The panel's Murre or Package button: show the app, on this project (and its Package window) when given.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ShowAppRequest {
+    pub request_id: String,
+    pub project_id: Option<String>,
+    /// `package` opens the project's Package window.
+    pub open: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
@@ -266,6 +278,13 @@ enum Incoming {
     },
     ListVersions {
         request_id: String,
+    },
+    ShowApp {
+        request_id: String,
+        #[serde(default)]
+        project_id: Option<String>,
+        #[serde(default)]
+        open: Option<String>,
     },
     ImportDone {
         request_id: String,
@@ -1033,6 +1052,10 @@ fn apply(shared: &Shared, id: u64, msg: Incoming) {
         Incoming::ListVersions { request_id } => {
             s.versions_request = Some(request_id);
         }
+        Incoming::ShowApp { request_id, project_id, open } => {
+            let open = open.filter(|o| o == "package");
+            s.show_app = Some(ShowAppRequest { request_id, project_id: project_id.filter(|p| !p.is_empty()), open });
+        }
         Incoming::ImportDone { request_id, comp, created } => {
             s.import = Some(ImportOutcome { request_id, ok: true, comp: Some(comp), created, message: None });
         }
@@ -1488,6 +1511,12 @@ mod tests {
         let mut ws = connect(&url(&bridge), None).unwrap();
         ws.send(state_msg(None, false)).unwrap();
         wait(|| bridge.status().connected);
+        ws.send(Message::text(r#"{"type":"showApp","requestId":"s1","projectId":"p1","open":"package"}"#)).unwrap();
+        wait(|| bridge.status().show_app.is_some());
+        assert_eq!(
+            bridge.status().show_app.unwrap(),
+            ShowAppRequest { request_id: "s1".into(), project_id: Some("p1".into()), open: Some("package".into()) }
+        );
         ws.send(Message::text(r#"{"type":"listVersions","requestId":"v1"}"#)).unwrap();
         wait(|| bridge.status().versions_request.is_some());
         assert_eq!(bridge.status().versions_request.as_deref(), Some("v1"));

@@ -14,6 +14,11 @@ export const host: ScanHost = {
   relinkFootage: (id: number, newPath: string) => evalTS("relinkFootage", id, newPath),
 };
 
-/** Moves files to the Trash through Finder (macOS). Used only when a project's settings turn it on. */
+/** Moves files to the Trash (Finder on macOS) or the Recycle Bin (Windows). Used only when a project's settings turn it on. */
 export const trash = (paths: string[]) =>
-  trashFiles(os.platform(), (args) => void child_process.execFileSync("osascript", args, { stdio: "pipe", timeout: 60000 }), paths);
+  trashFiles(
+    os.platform(),
+    (program, args) =>
+      String(child_process.execFileSync(program, args, { stdio: "pipe", timeout: 60000, windowsHide: true, encoding: "utf8" })),
+    paths,
+  );

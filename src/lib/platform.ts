@@ -10,6 +10,8 @@ export const isWindows = /Win/i.test(platform)
 export const fileBrowser = isWindows ? "File Explorer" : "Finder"
 /** "Show in Finder" or "Show in File Explorer". */
 export const showInFileBrowser = `Show in ${fileBrowser}`
+/** Where deleted files go: "Trash" or "Recycle Bin". */
+export const trashName = isWindows ? "Recycle Bin" : "Trash"
 /** "this Mac" or "this PC". */
 export const thisComputer = isWindows ? "this PC" : "this Mac"
 /** The modifier key shown in shortcut hints. */

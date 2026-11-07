@@ -14,7 +14,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { formatBytes, formatDateTime } from "@/lib/format"
 import { api, errorMessage, type Workfile, type WorkfileScan } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
-import { showInFileBrowser } from "@/lib/platform"
+import { baseName, showInFileBrowser } from "@/lib/platform"
+import { StarterProgress, announceStarter, useStarter } from "../starter-progress"
+import { defaultInstall, useAeInstalls } from "../use-ae-installs"
 
 type State =
   | { status: "loading" }
@@ -132,9 +134,7 @@ export function WorkfileTimeline({
             )}
 
             {state.scan.workfiles.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                No .aep files here yet. After Effects hasn’t moved in.
-              </p>
+              <CreateFirstAep projectId={projectId} onDone={() => void load()} />
             ) : (
               <Versions scan={state.scan} pending={pending} onMark={mark} onOpen={onOpen} onNote={saveNote} showAll={showAll} setShowAll={setShowAll} />
             )}
@@ -146,6 +146,30 @@ export function WorkfileTimeline({
         )}
       </CardContent>
     </Card>
+  )
+}
+
+/** The empty state: no .aep yet, so offer to have After Effects make the first one. */
+function CreateFirstAep({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+  const starter = useStarter()
+  const install = defaultInstall(useAeInstalls())
+  const create = async () => {
+    try {
+      announceStarter(await starter.run(projectId, install?.path ?? null), baseName)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+    onDone()
+  }
+  if (starter.stage) return <StarterProgress stage={starter.stage} aerenderPath={install?.path ?? null} />
+  return (
+    <div className="flex flex-col items-center gap-3 py-6 text-center">
+      <p className="text-sm text-muted-foreground">No .aep files here yet. After Effects hasn’t moved in.</p>
+      <Button type="button" size="sm" variant="outline" disabled={starter.running} onClick={() => void create()}>
+        <img src={aeIcon} alt="" className="size-4" />
+        Create in After Effects
+      </Button>
+    </div>
   )
 }
 

@@ -12,7 +12,9 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { useStartup } from "@/features/startup/use-startup"
 import { Skeleton } from "@/components/ui/skeleton"
 import { FolderSetupEditor } from "@/features/settings/folder-setup"
-import { CompanionInstallCard, canInstallCompanion, useCompanionInstall } from "@/features/companion/companion-install"
+import { CompanionInstallCard, useCompanionInstall } from "@/features/companion/companion-install"
+import { CalendarSyncRows, useCalendarSync } from "@/features/settings/calendar-sync"
+import { isMac } from "@/lib/platform"
 import { useProfile, useProfileContext } from "@/features/profile/profile-context"
 import { prepareAvatar } from "@/lib/image"
 import { ACCENTS, useAccent, useFontPreviews, useTranslucent } from "@/lib/preferences"
@@ -66,6 +68,7 @@ const SECTIONS = [
   { id: "profile", label: "Profile" },
   { id: "appearance", label: "Appearance" },
   { id: "startup", label: "Startup" },
+  ...(isMac ? [{ id: "calendar", label: "Calendar" }] : []),
   { id: "after-effects", label: "After Effects" },
   { id: "folders", label: "Folders" },
   { id: "companion", label: "Companion" },
@@ -275,6 +278,16 @@ function StartupSection() {
   )
 }
 
+function CalendarSection() {
+  const calendar = useCalendarSync()
+  if (calendar.status && !calendar.status.supported) return null
+  return (
+    <Section id="calendar" title="Calendar" description="Your project deadlines and Murre events, in Apple Calendar too.">
+      {calendar.status ? <CalendarSyncRows state={calendar} Row={Row} /> : <Skeleton className="m-4 h-10" />}
+    </Section>
+  )
+}
+
 function FoldersSection() {
   return (
     <Section id="folders" title="Folders" description="The sub-folders a new project gets inside 02 Assets, and which files go into each.">
@@ -303,7 +316,7 @@ function CompanionSection() {
   return (
     <Section id="companion" title="After Effects Companion" description="The panel inside After Effects that scans projects and copies their files.">
       <CompanionInstallCard state={companion} bare />
-      {canInstallCompanion && <Row
+      <Row
         title="Companion not showing up?"
         htmlFor="cep-debug"
         description={
@@ -326,7 +339,7 @@ function CompanionSection() {
           disabled={debugMode === null}
           onCheckedChange={(v) => void toggleDebug(v === true)}
         />
-      </Row>}
+      </Row>
     </Section>
   )
 }
@@ -507,6 +520,7 @@ export function SettingsPage() {
           <ProfileSection />
           <AppearanceSection />
           <StartupSection />
+          {isMac && <CalendarSection />}
           <AfterEffectsSection />
           <FoldersSection />
           <CompanionSection />

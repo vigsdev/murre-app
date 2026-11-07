@@ -32,6 +32,8 @@ pub struct CreateOutcome {
     pub previous: Option<String>,
     /// Why nothing was created.
     pub message: Option<String>,
+    /// The person pressed Cancel while Murre waited.
+    pub cancelled: bool,
 }
 
 /// A detected After Effects install.

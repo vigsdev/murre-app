@@ -32,12 +32,19 @@ tungstenite = "0.26"
 tauri-plugin-autostart = "2"
 flate2 = "1.1.10"
 dunce = "1"
+# Unpacks the signed Companion package on every system (macOS and Windows), instead of an `unzip` program.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 window-vibrancy = "0.8.1"
+# Apple Calendar (EventKit), for showing Murre's deadlines and events in Calendar. Same objc2 family Tauri already uses.
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDate", "NSError", "NSObjCRuntime", "NSPredicate", "NSString", "NSURL"] }
+objc2-event-kit = { version = "0.3", default-features = false, features = ["std", "block2", "EKCalendar", "EKCalendarItem", "EKEvent", "EKEventStore", "EKObject", "EKSource", "EKTypes"] }
 
 [dev-dependencies]
 tempfile = "3"

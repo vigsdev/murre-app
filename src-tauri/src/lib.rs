@@ -3,6 +3,9 @@ mod app_data;
 mod aerender;
 mod assets;
 mod bridge;
+#[cfg(target_os = "macos")]
+mod calendar_mac;
+mod calendar_sync;
 mod colors;
 mod comps;
 mod footage;
@@ -35,6 +38,7 @@ mod renders;
 mod safe_fs;
 mod spaces;
 mod startup;
+mod starter_wait;
 mod tasks;
 mod updater;
 mod platform;
@@ -191,6 +195,10 @@ pub struct AppState {
     bridge: Option<bridge::Bridge>,
     /// The one render that may run at a time.
     render: render_job::Runner,
+    /// Keeps the "Murre" calendar in Apple Calendar up to date, when that is turned on.
+    calendar: calendar_sync::CalendarSync,
+    /// Cancel and other buttons for "Open After Effects and start".
+    starter: starter_wait::Control,
 }
 
 /// Dropping this stops the watcher.
@@ -254,7 +262,7 @@ async fn create_project(
     input: project::NewProject,
 ) -> AppResult<project::ProjectRecord> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    project::create(&conn, input)
+    project::create(&conn, input).inspect(|_| state.calendar.nudge())
 }
 
 /// Remember that a project was just opened, for Home's "Pick up where you left off".
@@ -349,7 +357,7 @@ async fn update_project(
     input: project_store::UpdateProject,
 ) -> AppResult<project::ProjectRecord> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    project_store::update(&conn, input)
+    project_store::update(&conn, input).inspect(|_| state.calendar.nudge())
 }
 
 /// Changes only the deadline (`null` clears it) in the project's `project.json` and the index.
@@ -360,7 +368,7 @@ async fn set_project_deadline(
     deadline: Option<String>,
 ) -> AppResult<project::ProjectRecord> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    project_store::set_deadline(&conn, &id, deadline.as_deref())
+    project_store::set_deadline(&conn, &id, deadline.as_deref()).inspect(|_| state.calendar.nudge())
 }
 
 /// Events with `from <= date <= to` (`YYYY-MM-DD`, at most about 800 days apart).
@@ -380,7 +388,7 @@ async fn add_event(
     input: events::EventInput,
 ) -> AppResult<events::Event> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    events::add(&conn, &input)
+    events::add(&conn, &input).inspect(|_| state.calendar.nudge())
 }
 
 #[tauri::command]
@@ -390,13 +398,13 @@ async fn update_event(
     input: events::EventInput,
 ) -> AppResult<events::Event> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    events::update(&conn, &id, &input)
+    events::update(&conn, &id, &input).inspect(|_| state.calendar.nudge())
 }
 
 #[tauri::command]
 async fn delete_event(state: State<'_, AppState>, id: String) -> AppResult<()> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    events::delete(&conn, &id)
+    events::delete(&conn, &id).inspect(|_| state.calendar.nudge())
 }
 
 #[tauri::command]
@@ -463,7 +471,7 @@ async fn set_project_space(
 #[tauri::command]
 async fn remove_project(state: State<'_, AppState>, id: String) -> AppResult<()> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    project_store::remove(&conn, &id)
+    project_store::remove(&conn, &id).inspect(|_| state.calendar.nudge())
 }
 
 #[tauri::command]
@@ -482,7 +490,7 @@ async fn import_project(
     create_metadata: bool,
 ) -> AppResult<project_store::ImportResult> {
     let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
-    project_store::import(&conn, &path, create_metadata)
+    project_store::import(&conn, &path, create_metadata).inspect(|_| state.calendar.nudge())
 }
 
 #[tauri::command]
@@ -710,6 +718,138 @@ async fn open_asset(app: tauri::AppHandle, state: State<'_, AppState>, project_i
         .map_err(|e| AppError::Invalid(format!("{} couldn’t open that file: {e}", platform::OS_NAME)))
 }
 
+/// One Calendar sync for the background worker: `None` when there is nothing to do (sync off, no access, not macOS).
+fn run_calendar_sync(app: &tauri::AppHandle) -> Option<calendar_sync::Report> {
+    #[cfg(target_os = "macos")]
+    {
+        let state = app.try_state::<AppState>()?;
+        let (settings, desired) = {
+            let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+            let settings = calendar_sync::read_settings(&conn).ok()?;
+            if !settings.enabled || calendar_mac::access() != "full" {
+                return None;
+            }
+            let desired = match calendar_sync::desired(&conn) {
+                Ok(d) => d,
+                Err(e) => return Some(calendar_sync::Report { at: project::now(), error: Some(e.to_string()), ..Default::default() }),
+            };
+            (settings, desired)
+        };
+        // EventKit runs without holding the database.
+        match calendar_mac::sync(settings.calendar_id.as_deref(), &desired) {
+            Ok((id, report)) => {
+                if settings.calendar_id.as_deref() != Some(id.as_str()) {
+                    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+                    // Turned off meanwhile? Then only remember the calendar, don't switch it back on.
+                    let mut now = calendar_sync::read_settings(&conn).unwrap_or_default();
+                    now.calendar_id = Some(id);
+                    let _ = calendar_sync::write_settings(&conn, &now);
+                }
+                Some(report)
+            }
+            Err(e) => {
+                applog::warn("calendar", &format!("Calendar sync failed: {e}"));
+                Some(calendar_sync::Report { at: project::now(), error: Some(e.to_string()), ..Default::default() })
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        None
+    }
+}
+
+fn calendar_status(state: &AppState) -> AppResult<calendar_sync::SyncStatus> {
+    let settings = {
+        let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+        calendar_sync::read_settings(&conn)?
+    };
+    #[cfg(target_os = "macos")]
+    let (supported, access) = (true, calendar_mac::access().to_string());
+    #[cfg(not(target_os = "macos"))]
+    let (supported, access) = (false, "unsupported".to_string());
+    Ok(calendar_sync::SyncStatus { supported, enabled: settings.enabled && supported, access, last: state.calendar.last() })
+}
+
+/// Whether Murre's deadlines and events are shown in Apple Calendar, and whether macOS allows it.
+#[tauri::command]
+async fn get_calendar_sync(state: State<'_, AppState>) -> AppResult<calendar_sync::SyncStatus> {
+    calendar_status(&state)
+}
+
+/// Turn showing Murre in Apple Calendar on or off. Turning it on asks macOS for Calendar access the first time; if
+/// access isn't given, it stays off.
+#[tauri::command]
+async fn set_calendar_sync(app: tauri::AppHandle, enabled: bool) -> AppResult<calendar_sync::SyncStatus> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        #[cfg(not(target_os = "macos"))]
+        if enabled {
+            return Err(error::AppError::Invalid(format!("Showing Murre in a calendar app isn’t available on {} yet.", platform::OS_NAME)));
+        }
+        #[cfg(target_os = "macos")]
+        let allowed = !enabled || calendar_mac::access() == "full" || (calendar_mac::access() == "notDetermined" && calendar_mac::request_access());
+        #[cfg(not(target_os = "macos"))]
+        let allowed = true;
+        {
+            let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = calendar_sync::read_settings(&conn)?;
+            s.enabled = enabled && allowed;
+            calendar_sync::write_settings(&conn, &s)?;
+        }
+        if enabled && allowed {
+            state.calendar.nudge();
+        }
+        calendar_status(&state)
+    })
+    .await
+    .map_err(|e| error::AppError::Invalid(e.to_string()))?
+}
+
+/// Delete the "Murre" calendar (and only it) from Apple Calendar, and turn syncing off.
+#[tauri::command]
+async fn remove_murre_calendar(app: tauri::AppHandle) -> AppResult<calendar_sync::SyncStatus> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let id = {
+            let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = calendar_sync::read_settings(&conn)?;
+            s.enabled = false;
+            calendar_sync::write_settings(&conn, &s)?;
+            s.calendar_id
+        };
+        #[cfg(target_os = "macos")]
+        if let Some(id) = id.as_deref() {
+            calendar_mac::remove_calendar(id)?;
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = id;
+        {
+            let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = calendar_sync::read_settings(&conn)?;
+            s.calendar_id = None;
+            calendar_sync::write_settings(&conn, &s)?;
+        }
+        calendar_status(&state)
+    })
+    .await
+    .map_err(|e| error::AppError::Invalid(e.to_string()))?
+}
+
+/// Open System Settings at Privacy & Security → Calendars, where Calendar access is given or taken back.
+#[tauri::command]
+async fn open_calendar_privacy() -> AppResult<()> {
+    if !cfg!(target_os = "macos") {
+        return Ok(());
+    }
+    platform::command("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")
+        .status()
+        .map(|_| ())
+        .map_err(|e| error::AppError::Invalid(e.to_string()))
+}
+
 /// Where the app's copy of the Companion can be (installed app first, then the source tree when running `tauri dev`).
 fn companion_bundle(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     let mut candidates = Vec::new();
@@ -721,10 +861,16 @@ fn companion_bundle(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     companion_install::find_bundle(&candidates)
 }
 
+/// Where the Companion goes for this user (the CEP folder in the home folder on macOS, in roaming app data on Windows).
+fn companion_target(app: &tauri::AppHandle) -> AppResult<std::path::PathBuf> {
+    let home = app.path().home_dir().map_err(|e| error::AppError::Invalid(e.to_string()))?;
+    let roaming = app.path().data_dir().map_err(|e| error::AppError::Invalid(e.to_string()))?;
+    Ok(companion_install::target_dir(&home, &roaming))
+}
+
 #[tauri::command]
 async fn get_companion_install(app: tauri::AppHandle) -> AppResult<companion_install::CompanionInstall> {
-    let home = app.path().home_dir().map_err(|e| error::AppError::Invalid(e.to_string()))?;
-    Ok(companion_install::status(companion_bundle(&app).as_deref(), &companion_install::target_dir(&home)))
+    Ok(companion_install::status(companion_bundle(&app).as_deref(), &companion_target(&app)?))
 }
 
 /// Whether After Effects is set to load panels it cannot verify (the `PlayerDebugMode` setting).
@@ -754,19 +900,12 @@ async fn set_companion_debug_mode(enabled: bool) -> AppResult<bool> {
 #[tauri::command]
 async fn install_companion(app: tauri::AppHandle) -> AppResult<companion_install::CompanionInstall> {
     tauri::async_runtime::spawn_blocking(move || {
-        if !cfg!(target_os = "macos") {
-            return Err(error::AppError::Invalid(format!(
-                "Installing the Companion from Murre isn’t available on {} yet.",
-                platform::OS_NAME
-            )));
-        }
-        let home = app.path().home_dir().map_err(|e| error::AppError::Invalid(e.to_string()))?;
         let Some(bundle) = companion_bundle(&app) else {
             return Err(error::AppError::Invalid(
                 "This build of Murre does not include the Companion. Run `npm run bundle:signed` in murre-ae, then rebuild the app.".into(),
             ));
         };
-        let target = companion_install::target_dir(&home);
+        let target = companion_target(&app)?;
         companion_install::install_to(&bundle, &target)?;
         // A signed package loads as it is. Only an unsigned folder needs the system-wide debug setting.
         if companion_install::signed_package(&bundle).is_none() {
@@ -855,22 +994,35 @@ async fn check_after_effects(app: tauri::AppHandle) -> AppResult<AeCheck> {
 /// project saved as `<name>-v1.aep` in the workfile folder. Whatever project was open is saved and closed first
 /// (a never-saved one goes to the Desktop). A problem is reported in the result, not as an error, because the project
 /// folder already exists and stays valid.
+///
+/// There is no fixed time limit while After Effects is open, because it may be waiting at a dialog: progress goes to
+/// the app as `starter-progress` events (see `starter_wait`), and the person can cancel, bring After Effects forward,
+/// or open it themselves when Murre couldn't.
 #[tauri::command]
 async fn create_starter_in_after_effects(
     app: tauri::AppHandle,
     project_id: String,
     aerender_path: Option<String>,
+    already_asked: Option<bool>,
 ) -> AppResult<ae_project::CreateOutcome> {
     tauri::async_runtime::spawn_blocking(move || {
+        use starter_wait::{Reason, Stage, Wait};
         use std::time::{Duration, Instant};
         let state = app.state::<AppState>();
+        let Some(_running) = state.starter.begin() else {
+            return Err(error::AppError::Invalid("Murre is already making a project file in After Effects.".into()));
+        };
         let (root, saved) = {
             let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
             (project_store::available_root(&conn, &project_id)?, aerender::saved_path(&conn)?)
         };
-        let fail = |m: &str| Ok(ae_project::CreateOutcome { added: None, previous: None, message: Some(m.to_string()) });
+        let outcome = |added: Option<String>, previous: Option<String>, message: Option<String>, cancelled: bool| {
+            Ok(ae_project::CreateOutcome { added, previous, message, cancelled })
+        };
+        let fail = |m: &str| outcome(None, None, Some(m.to_string()), false);
         let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let rel = ae_project::target_rel(&name);
+        let file = rel.rsplit('/').next().unwrap_or(&rel).to_string();
         let target = root.join(&rel);
         if target.exists() {
             return fail(&format!("{rel} already exists, so nothing was created."));
@@ -878,55 +1030,190 @@ async fn create_starter_in_after_effects(
         let Some(bridge) = state.bridge.as_ref() else {
             return fail("The link to the After Effects Companion is not available.");
         };
-        if !bridge.is_connected() {
-            if open_ae::is_running() {
-                return fail("After Effects is running but the Murre Companion is not connected. Restart After Effects once so it loads the Companion, then try again.");
+        let mut shown: Option<Stage> = None;
+        let mut show = |stage: Stage| {
+            if shown.as_ref() != Some(&stage) {
+                let _ = app.emit("starter-progress", &stage);
+                shown = Some(stage);
             }
-            let chosen = open_ae::choose_app(aerender_path.as_deref(), saved.as_deref(), &aerender::detect())?;
-            let Some(ae) = chosen.as_deref() else {
-                return fail("No After Effects installation was found.");
-            };
-            open_ae::launch(ae)?;
-            let until = Instant::now() + Duration::from_secs(120);
-            while !bridge.is_connected() {
-                if Instant::now() >= until {
-                    return fail("After Effects did not connect in time. Check that the Murre Companion is installed (Settings).");
+        };
+        let tick = Duration::from_millis(250);
+        let cancelled = |previous: Option<String>| {
+            outcome(None, previous, Some("Stopped. The project folder is ready; make the After Effects file whenever you like.".into()), true)
+        };
+        // Whether the open project has to be looked at before anything is closed. Skipped only when the app asked
+        // about it just now (New Project) and After Effects hasn't had to start since.
+        let mut check_first = !already_asked.unwrap_or(false) || !bridge.is_connected();
+        // Set when Murre gave up starting After Effects and the person should open it.
+        let mut ask: Option<Reason> = None;
+        let mut launched_once = false;
+
+        loop {
+            // 1. Wait for After Effects and the Companion.
+            if !bridge.is_connected() {
+                check_first = true;
+                let mut launched = false;
+                if ask.is_none() && !launched_once && !open_ae::is_running() {
+                    launched_once = true;
+                    let chosen = open_ae::choose_app(aerender_path.as_deref(), saved.as_deref(), &aerender::detect()).ok().flatten();
+                    match chosen.map(|ae| open_ae::launch(&ae)) {
+                        Some(Ok(())) => launched = true,
+                        _ => ask = Some(Reason::LaunchFailed),
+                    }
                 }
-                std::thread::sleep(Duration::from_millis(500));
+                let mut started = Instant::now();
+                let mut seen_running = false;
+                let mut last_look = Instant::now() - Duration::from_secs(5);
+                while !bridge.is_connected() {
+                    if state.starter.cancelled() {
+                        return cancelled(None);
+                    }
+                    if let Some(reason) = ask {
+                        show(Stage::OpenYourself { reason });
+                        if state.starter.take_opened() {
+                            ask = None;
+                            // Give it the same time to appear as one Murre started itself.
+                            launched = true;
+                            started = Instant::now();
+                            seen_running = false;
+                            last_look = Instant::now() - Duration::from_secs(5);
+                        }
+                        std::thread::sleep(tick);
+                        continue;
+                    }
+                    // `ps` once a second is plenty.
+                    if last_look.elapsed() >= Duration::from_secs(1) {
+                        last_look = Instant::now();
+                        let running = open_ae::is_running();
+                        seen_running |= running;
+                        match starter_wait::connect_wait(started.elapsed(), launched, seen_running, running) {
+                            Wait::Show(stage) => show(stage),
+                            Wait::Ask(reason) => ask = Some(reason),
+                        }
+                    }
+                    std::thread::sleep(tick);
+                }
+            }
+
+            // 2. Made before a crash or a reconnect? Then it's done.
+            if target.is_file() {
+                workfiles::set_current(&root, Some(&rel))?;
+                return outcome(Some(rel), None, None, false);
+            }
+
+            // 3. Never close a project the person may have opened meanwhile without asking.
+            if check_first {
+                check_first = false;
+                show(Stage::Checking);
+                let id = uuid::Uuid::new_v4().simple().to_string();
+                let mut found = None;
+                if bridge.request_inspect(&id).is_ok() {
+                    let until = Instant::now() + Duration::from_secs(5);
+                    while Instant::now() < until && found.is_none() {
+                        found = bridge.status().inspect.filter(|r| r.request_id == id);
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+                // No answer counts as "something may be open": better to ask once too often.
+                let (kind, open_name) = found.map(|r| (r.kind, r.name)).unwrap_or_else(|| ("unknown".into(), String::new()));
+                if kind != "empty" {
+                    let desktop_dir = app.path().desktop_dir().ok().map(|p| p.to_string_lossy().into_owned());
+                    state.starter.take_answer();
+                    show(Stage::Confirm { kind, name: open_name, desktop_dir });
+                    loop {
+                        if state.starter.cancelled() {
+                            return cancelled(None);
+                        }
+                        match state.starter.take_answer() {
+                            Some(true) => break,
+                            Some(false) => return cancelled(None),
+                            None => std::thread::sleep(tick),
+                        }
+                    }
+                }
+            }
+
+            // 4. Ask After Effects to make the file.
+            let rescue_dir = app.path().desktop_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+            let request_id = uuid::Uuid::new_v4().simple().to_string();
+            bridge.request_create_starter(bridge::StarterSpec {
+                request_id: request_id.clone(),
+                path: target.to_string_lossy().into_owned(),
+                comp_name: "Main Comp".into(),
+                width: 1920,
+                height: 1080,
+                fps: 30.0,
+                seconds: 30.0,
+                rescue_dir,
+            })?;
+            let asked = Instant::now();
+            loop {
+                if let Some(r) = bridge.status().starter.filter(|r| r.request_id == request_id) {
+                    if r.ok && target.is_file() {
+                        workfiles::set_current(&root, Some(&rel))?;
+                        return outcome(Some(rel), r.previous, None, false);
+                    }
+                    let message = r.message.unwrap_or_else(|| "After Effects could not save the project.".into());
+                    return outcome(None, r.previous, Some(message), false);
+                }
+                if state.starter.cancelled() {
+                    return outcome(
+                        None,
+                        None,
+                        Some(format!("Stopped waiting. If After Effects still saves {file}, it appears in the project; mark it as current there.")),
+                        true,
+                    );
+                }
+                if !bridge.is_connected() {
+                    // After Effects quit or crashed mid-way: ask the person to open it, then try again.
+                    ask = Some(Reason::Closed);
+                    break;
+                }
+                show(starter_wait::create_wait(asked.elapsed(), &file));
+                std::thread::sleep(Duration::from_millis(200));
             }
         }
-        let rescue_dir = app.path().desktop_dir().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
-        let request_id = uuid::Uuid::new_v4().simple().to_string();
-        bridge.request_create_starter(bridge::StarterSpec {
-            request_id: request_id.clone(),
-            path: target.to_string_lossy().into_owned(),
-            comp_name: "Main Comp".into(),
-            width: 1920,
-            height: 1080,
-            fps: 30.0,
-            seconds: 30.0,
-            rescue_dir,
-        })?;
-        let until = Instant::now() + Duration::from_secs(90);
-        loop {
-            if let Some(r) = bridge.status().starter.filter(|r| r.request_id == request_id) {
-                if r.ok && target.is_file() {
-                    workfiles::set_current(&root, Some(&rel))?;
-                    return Ok(ae_project::CreateOutcome { added: Some(rel), previous: r.previous, message: None });
-                }
-                return Ok(ae_project::CreateOutcome {
-                    added: None,
-                    previous: r.previous,
-                    message: Some(r.message.unwrap_or_else(|| "After Effects could not save the project.".into())),
-                });
+    })
+    .await
+    .map_err(|e| error::AppError::Invalid(e.to_string()))?
+}
+
+/// Stop waiting for After Effects (the project folder stays).
+#[tauri::command]
+fn starter_cancel(state: State<'_, AppState>) {
+    state.starter.cancel();
+}
+
+/// "I've opened After Effects": wait for it again.
+#[tauri::command]
+fn starter_opened(state: State<'_, AppState>) {
+    state.starter.opened();
+}
+
+/// The answer to "save and close the project that's open in After Effects?".
+#[tauri::command]
+fn starter_answer(state: State<'_, AppState>, ok: bool) {
+    state.starter.answer(ok);
+}
+
+/// Bring After Effects to the front: the one that is running, else the chosen version.
+#[tauri::command]
+async fn show_after_effects(app: tauri::AppHandle, aerender_path: Option<String>) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ae = match open_ae::running_app() {
+            Some(running) => Some(running),
+            None => {
+                let saved = {
+                    let state = app.state::<AppState>();
+                    let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+                    aerender::saved_path(&conn)?
+                };
+                open_ae::choose_app(aerender_path.as_deref(), saved.as_deref(), &aerender::detect())?
             }
-            if !bridge.is_connected() {
-                return fail("After Effects closed the connection before the project was saved.");
-            }
-            if Instant::now() >= until {
-                return fail("After Effects did not answer in time. If it is showing a dialog, close it and try again.");
-            }
-            std::thread::sleep(Duration::from_millis(200));
+        };
+        match ae {
+            Some(ae) => open_ae::launch(&ae),
+            None => Err(error::AppError::Invalid("No After Effects installation was found.".into())),
         }
     })
     .await
@@ -1644,6 +1931,7 @@ pub fn run() {
             // The app works without the live link, so a failure here is not fatal.
             let seen_add = std::sync::Mutex::new(None::<String>);
             let seen_versions = std::sync::Mutex::new(None::<String>);
+            let seen_show = std::sync::Mutex::new(None::<String>);
             // The time log gets its own connection, so it never waits on the app's.
             let time_log = db::open(&paths.database).ok().map(activity::start).map(std::sync::Mutex::new);
             let bridge = match bridge::Bridge::start(
@@ -1669,6 +1957,15 @@ pub fn run() {
                                     premiere: Vec::new(),
                                 },
                             );
+                        }
+                    }
+                    // The panel's Murre or Package button (once per request): show the window, then let the page go to the project.
+                    if let Some(req) = &state.show_app {
+                        let mut seen = seen_show.lock().unwrap_or_else(|e| e.into_inner());
+                        if seen.as_deref() != Some(req.request_id.as_str()) {
+                            *seen = Some(req.request_id.clone());
+                            show_main(&handle);
+                            let _ = handle.emit("companion-show", req);
                         }
                     }
                     // The panel asked which other versions sit next to the open project (once per request).
@@ -1703,12 +2000,16 @@ pub fn run() {
                     let _ = render_handle.emit("render-update", job);
                 }),
             );
+            let calendar_handle = app.handle().clone();
+            let calendar = calendar_sync::CalendarSync::start(move || run_calendar_sync(&calendar_handle));
             app.manage(AppState {
                 paths,
                 db: Mutex::new(conn),
                 watch: Mutex::new(None),
                 bridge,
                 render,
+                calendar,
+                starter: starter_wait::Control::default(),
             });
             start_auto_scan(app.handle().clone());
             // The window starts hidden (tauri.conf.json): show it, unless this is a login launch.
@@ -1721,6 +2022,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_app_info,
+            get_calendar_sync,
+            set_calendar_sync,
+            remove_murre_calendar,
+            open_calendar_privacy,
+            starter_cancel,
+            starter_opened,
+            starter_answer,
+            show_after_effects,
             check_for_updates,
             get_profile,
             save_profile,

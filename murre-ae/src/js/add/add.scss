@@ -1,0 +1,58 @@
+// The "Add to Murre" popup: same dark look as the panel.
+html,
+body {
+  margin: 0;
+  background: #1e1e1e;
+  color: #f5f5f5;
+  overflow: hidden;
+}
+
+.dlg {
+  box-sizing: border-box;
+  height: 100vh;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: var(--mantine-font-family);
+  font-size: var(--mantine-font-size-sm);
+  user-select: none;
+}
+
+.dlg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dlg-label {
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 500;
+}
+
+.dlg-folder {
+  height: 30px;
+  padding: 0 10px;
+  text-align: left;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(255 255 255 / 0.04);
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  &:hover {
+    background: rgb(255 255 255 / 0.08);
+  }
+  &[data-empty] {
+    color: rgb(245 245 245 / 0.55);
+  }
+}
+
+.dlg-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

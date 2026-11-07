@@ -4,7 +4,7 @@ import { UserAvatar } from "@/components/user-avatar"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { CompanionInstallCard, canInstallCompanion, useCompanionInstall } from "@/features/companion/companion-install"
+import { CompanionInstallCard, useCompanionInstall } from "@/features/companion/companion-install"
 import { defaultInstall, installName, useAeInstalls } from "@/features/projects/use-ae-installs"
 import { prepareAvatar } from "@/lib/image"
 import { api } from "@/lib/tauri"
@@ -147,7 +147,7 @@ export function OnboardingPage() {
               <Button type="button" variant="outline" size="lg" className="flex-1" disabled={saving} onClick={() => setStep(hasChoice ? "ae" : "profile")}>
                 Back
               </Button>
-              <Button type="button" size="lg" className="flex-1" disabled={saving || (canInstallCompanion && !companion.ready)} onClick={() => void finish()}>
+              <Button type="button" size="lg" className="flex-1" disabled={saving || !companion.ready} onClick={() => void finish()}>
                 {saving ? "Saving…" : "Finish"}
               </Button>
             </div>

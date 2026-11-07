@@ -312,6 +312,11 @@ export class BridgeClient {
     this.write(JSON.stringify({ type: "listVersions", requestId }));
   }
 
+  /** Bring the Murre app forward, optionally on this project with its Package window open. */
+  sendShowApp(requestId: string, projectId: string | null, open: "package" | null = null): boolean {
+    return this.write(JSON.stringify({ type: "showApp", requestId, projectId, open }));
+  }
+
   sendImportDone(requestId: string, comp: string, created: boolean) {
     this.write(JSON.stringify({ type: "importDone", requestId, comp, created }));
   }

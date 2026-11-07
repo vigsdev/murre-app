@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Shown by macOS when Murre asks for Calendar access (Settings → Calendar → Show in Apple Calendar). -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Murre adds your project deadlines and events to a calendar called “Murre”. It only changes events in that calendar.</string>
+	<!-- The same, for macOS before 14. -->
+	<key>NSCalendarsUsageDescription</key>
+	<string>Murre adds your project deadlines and events to a calendar called “Murre”. It only changes events in that calendar.</string>
+</dict>
+</plist>

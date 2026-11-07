@@ -57,6 +57,16 @@ const config: CEP_Config = {
       width: 100,
       height: 100,
     },
+    {
+      // "Add this Project to Murre": a small popup asking for the project's name and folder (src/js/lib/murre/add-dialog.ts).
+      mainPath: "./add/index.html",
+      name: "add",
+      panelDisplayName: "Add to Murre",
+      type: "ModalDialog",
+      autoVisible: true,
+      width: 380,
+      height: 210,
+    },
   ],
   build: {
     jsxBin: "off",
