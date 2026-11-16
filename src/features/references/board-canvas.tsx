@@ -19,6 +19,7 @@ import {
   Minus,
   Paintbrush,
   Plus,
+  Send,
   SendToBack,
   Trash2,
 } from "lucide-react"
@@ -35,6 +36,7 @@ import {
 } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { api, errorMessage } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
@@ -132,6 +134,16 @@ function isEditable(target: EventTarget | null): boolean {
 
 export function BoardCanvas({ projectId, initial, readOnly = false, onChange, onPickFile, onPickLink, ref }: Props) {
   const vpRef = useRef<HTMLDivElement>(null)
+  // The selection bar sits under the selection, so it needs its own size to stay inside the board.
+  const barRef = useRef<HTMLDivElement>(null)
+  const [barSize, setBarSize] = useState({ w: 0, h: 0 })
+  useLayoutEffect(() => {
+    const el = barRef.current
+    if (!el) return
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    if (w !== barSize.w || h !== barSize.h) setBarSize({ w, h })
+  })
   const [menu, setMenu] = useState<{ x: number; y: number; file: string } | null>(null)
   const [items, setItems] = useState<Item[]>(initial.items)
   const itemsRef = useRef<Item[]>(initial.items)
@@ -609,6 +621,12 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
       else nx = Math.max(nx, fixed.x + MIN)
       if (g.corner.includes("n")) ny = Math.min(ny, fixed.y - MIN)
       else ny = Math.max(ny, fixed.y + MIN)
+      // Shift keeps the shape's proportions, following whichever side was dragged further.
+      if (e.shiftKey && g.orig.w > 0 && g.orig.h > 0) {
+        const scale = Math.max(Math.abs(nx - fixed.x) / g.orig.w, Math.abs(ny - fixed.y) / g.orig.h)
+        nx = fixed.x + Math.sign(nx - fixed.x) * g.orig.w * scale
+        ny = fixed.y + Math.sign(ny - fixed.y) * g.orig.h * scale
+      }
       const r = { x: Math.min(fixed.x, nx), y: Math.min(fixed.y, ny), w: Math.abs(nx - fixed.x), h: Math.abs(ny - fixed.y) }
       setLive(g.before.map((i) => (i.id === g.id ? { ...i, ...r } : i)))
     } else if (g.kind === "end") {
@@ -703,6 +721,10 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
     } else if (!mod && !e.shiftKey && !e.altKey && key === "k" && !readOnly) {
       e.preventDefault()
       onPickLink?.()
+    } else if (!mod && !e.shiftKey && !e.altKey && !readOnly && (key === "r" || key === "o" || key === "l" || key === "a")) {
+      // R rectangle, O ellipse, L line, A arrow.
+      e.preventDefault()
+      addShape(({ r: "rect", o: "ellipse", l: "line", a: "arrow" } as const)[key])
     } else if (mod && key === "a") {
       e.preventDefault()
       select(new Set(itemsRef.current.map((i) => i.id)))
@@ -994,15 +1016,17 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
 
       {items.length === 0 && !editingId && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          Add images with “Add file”, paste them, or double-click to write some text.
+          Drop images here, paste them, or double-click to write.
         </div>
       )}
 
-      {selected.length > 0 && !editingId && !readOnly && (
+      {selected.length > 0 && group && !editingId && !readOnly && (
         <div
+          ref={barRef}
           data-ui
           onClick={refocus}
-          className="absolute top-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground"
+          className={cn(FLOAT_PANEL, "absolute z-10 flex items-center gap-0.5", barSize.w === 0 && "invisible")}
+          style={barPlace(group)}
         >
           {selected.length > 1 && (
             <>
@@ -1022,15 +1046,38 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
                   </Tool>
                 </>
               )}
-              <span className="mx-1 h-4 w-px bg-border" />
+              <span className="mx-1 h-5 w-px bg-border" />
             </>
           )}
           {only && (only.type === "pdf" || only.type === "link") && (
-            <Tool label={only.type === "pdf" ? "Open PDF" : "Open link"} onClick={() => openItem(only)}><ExternalLink /></Tool>
+            <LabelTool onClick={() => openItem(only)}>
+              <ExternalLink /> {only.type === "pdf" ? "Open PDF" : "Open link"}
+            </LabelTool>
           )}
           {only && only.type === "link" && !only.file && only.url && !readOnly && (
-            <Tool label="Get preview" onClick={() => void loadPreview(only.id, only.url!, true)}><ImageDown /></Tool>
+            <LabelTool onClick={() => void loadPreview(only.id, only.url!, true)}>
+              <ImageDown /> Get preview
+            </LabelTool>
           )}
+          {only && only.type === "image" && only.file && (
+            // The same as the right-click menu, one click closer. An SVG can go in as editable shapes or as a plain layer.
+            only.file.endsWith(".svg") ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="lg" className="rounded-lg px-3 [&_svg]:size-[18px]" />}>
+                  <Send /> Send to AE
+                </DropdownMenuTrigger>
+                <DropdownMenuContent data-ui align="center" side="bottom" sideOffset={8}>
+                  <DropdownMenuItem onClick={() => sendToAe(only.file!, true)}>As shapes</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => sendToAe(only.file!)}>As a layer</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <LabelTool onClick={() => sendToAe(only.file!)}>
+                <Send /> Send to AE
+              </LabelTool>
+            )
+          )}
+          {only && (only.type === "pdf" || only.type === "link" || (only.type === "image" && only.file)) && <span className="mx-1 h-5 w-px bg-border" />}
           {selected.every(isShape) && <ShapeStyle shapes={selected} onChange={(patch) => apply(itemsRef.current.map((i) => (selRef.current.has(i.id) && isShape(i) ? { ...i, ...patch } : i)))} />}
           <Tool label="Bring to front" onClick={() => apply(reorder(itemsRef.current, selRef.current, "front"))}><BringToFront /></Tool>
           <Tool label="Send to back" onClick={() => apply(reorder(itemsRef.current, selRef.current, "back"))}><SendToBack /></Tool>
@@ -1039,13 +1086,13 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
         </div>
       )}
 
-      <div data-ui onClick={refocus} className="absolute right-3 bottom-3 flex items-center gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground">
+      <div data-ui onClick={refocus} className={cn(FLOAT_PANEL, "absolute right-3 bottom-3 flex items-center gap-0.5")}>
         <Tool label="Zoom out" onClick={() => zoomBy(0.8)}><Minus /></Tool>
         <button
           type="button"
           aria-label="Reset zoom to 100%"
           title="Reset zoom to 100%"
-          className="h-7 min-w-12 rounded-md px-1 text-xs tabular-nums hover:bg-accent"
+          className="h-9 min-w-14 rounded-lg px-1 text-xs tabular-nums outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => {
             const { w, h } = vpSize()
             zoomTo(1, w / 2, h / 2)
@@ -1059,14 +1106,43 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
     </div>
   )
 
+  /** Where the selection bar goes: centred under the selection, above it when there's no room below, always inside the board. */
+  function barPlace(r: { x: number; y: number; w: number; h: number }) {
+    const { w: vw, h: vh } = vpSize()
+    const v = view
+    const gap = 12
+    const edge = 12
+    const top = r.y * v.zoom + v.y
+    const bottom = (r.y + r.h) * v.zoom + v.y
+    const centre = (r.x + r.w / 2) * v.zoom + v.x
+    // Keep clear of the zoom controls in the bottom corner.
+    let y = bottom + gap
+    if (y + barSize.h > vh - edge - 56) y = top - gap - barSize.h
+    y = Math.min(Math.max(y, edge), Math.max(edge, vh - edge - barSize.h))
+    const x = Math.min(Math.max(centre - barSize.w / 2, edge), Math.max(edge, vw - edge - barSize.w))
+    return { left: x, top: y }
+  }
+
   function alignTo(kind: AlignKind) {
     apply(alignItems(itemsRef.current, selRef.current, kind, measuredRef.current))
   }
 }
 
+/** The look of everything that floats over the board: the tool rail, the selection bar, zoom and the add bar. */
+export const FLOAT_PANEL = "rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg shadow-black/10"
+
 function Tool({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <Button type="button" variant="ghost" size="icon-sm" aria-label={label} title={label} onClick={onClick}>
+    <Button type="button" variant="ghost" size="icon-lg" className="rounded-lg [&_svg]:size-[18px]" aria-label={label} title={label} onClick={onClick}>
+      {children}
+    </Button>
+  )
+}
+
+/** A selection-bar action that is worth its words (Open link, Get preview). */
+function LabelTool({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Button type="button" variant="ghost" size="lg" className="rounded-lg px-3 [&_svg]:size-[18px]" onClick={onClick}>
       {children}
     </Button>
   )
@@ -1365,7 +1441,7 @@ function ShapeStyle({ shapes, onChange }: { shapes: Item[]; onChange: (patch: St
 
   return (
     <Popover>
-      <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label="Color and line" title="Color and line" />}>
+      <PopoverTrigger render={<Button type="button" variant="ghost" size="icon-lg" className="rounded-lg [&_svg]:size-[18px]" aria-label="Color and line" title="Color and line" />}>
         <Paintbrush />
       </PopoverTrigger>
       <PopoverContent data-ui align="center" className="w-72 gap-3 p-3">

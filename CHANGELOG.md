@@ -4,6 +4,36 @@ What changed in each version of Murre. The newest is at the top.
 
 The version of the After Effects Companion is in brackets where it changed. Murre installs and updates the Companion itself.
 
+## 0.3.1 (2026-11-17)
+
+Companion 0.0.10.
+
+### Windows
+
+- **The Companion connects to Murre.** The panel couldn’t find the app on Windows: it never saw the folder Murre keeps its link in. Fixed. The panel’s Murre button can start Murre too.
+
+### New
+
+- **Murre reads your .aep files.** Without After Effects open, and without changing them:
+  - Each version says which After Effects saved it (“AE 27.1 Beta”) and which version it was saved from, and warns when it was saved in an After Effects newer than the one you have.
+  - Auto-saves show under the version they came from.
+  - **What changed since v1** (in a version’s menu): comps added, removed or resized, new footage, effects and fonts.
+  - A file that started as another project (a template, say) is marked “Other project file”.
+  - Before a render starts, Murre checks the comp is still in the saved file, and uses its new name if you renamed it.
+  - Projects that haven’t been scanned yet still show their fonts, plugins, After Effects version and footage.
+  - Project cards show the format: “1920×1080 · 30 fps · 155 comps”.
+  - ⌘K finds footage files, fonts and effects inside every project.
+- **Assets tab, redone.** How much space each kind of file takes, a folder tree with sizes, thumbnails for images and video, a list or grid, search, and which files the project actually uses in After Effects.
+- **Notes pages in a list** on the left, named by their first line. A small bar for bold, italic and the rest when you select text. Undo now survives switching pages.
+- **Moodboard tools float over the board**: a rail on the left, the selection bar under what you selected, **Send to AE** right in it. R, O, L and A add shapes; Shift keeps a shape’s proportions.
+- **Tabs:** ⌘T for a new tab, Ctrl+Tab to move between tabs, ⌘1–9 to jump to one.
+- **Package** can be stopped while it copies. The half-made package is removed.
+
+### Changed
+
+- Quieter look: no coloured wash behind a project’s title, covers without a render show the project’s initials, and the quick switcher is a plain panel.
+- Archiving a project warns when some of its files live outside its folder, since they aren’t archived with it.
+
 ## 0.3.0 (2026-11-16)
 
 Companion 0.0.9.

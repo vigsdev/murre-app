@@ -1,3 +1,4 @@
+import { thisComputer } from "@/lib/platform"
 import { Camera } from "lucide-react"
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { UserAvatar } from "@/components/user-avatar"
@@ -90,9 +91,9 @@ export function OnboardingPage() {
       <main className="solid-screen flex min-h-svh items-center justify-center p-6" data-tauri-drag-region>
         <div className="flex w-full max-w-sm flex-col gap-8">
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Choose your After Effects version</h1>
+            <h1 className="text-2xl font-medium tracking-tight">Choose your After Effects version</h1>
             <p className="text-sm text-muted-foreground">
-              We found multiple versions of Adobe After Effects installed on your Mac. Select the one you use most often.
+              We found multiple versions of Adobe After Effects installed on {thisComputer}. Select the one you use most often.
             </p>
           </div>
           <div role="radiogroup" aria-label="After Effects version" className="flex flex-col gap-2">
@@ -135,7 +136,7 @@ export function OnboardingPage() {
       <main className="solid-screen flex min-h-svh items-center justify-center p-6" data-tauri-drag-region>
         <div className="flex w-full max-w-sm flex-col gap-8">
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold tracking-tight">Install the After Effects Companion</h1>
+            <h1 className="text-2xl font-medium tracking-tight">Install the After Effects Companion</h1>
             <p className="text-sm text-muted-foreground">
               Murre uses a small After Effects extension to create and scan projects. A tiny sidekick for a very big app.
             </p>
@@ -173,8 +174,8 @@ export function OnboardingPage() {
     <main className="solid-screen flex min-h-svh items-center justify-center p-6" data-tauri-drag-region>
       <form onSubmit={onSubmitProfile} className="flex w-full max-w-sm flex-col gap-8">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Hey, welcome to Murre.</h1>
-          <p className="text-sm text-muted-foreground">Let’s get acquainted before we tackle your folder situation. Your details stay on your Mac.</p>
+          <h1 className="text-2xl font-medium tracking-tight">Set up Murre</h1>
+          <p className="text-sm text-muted-foreground">A name and a face first, then your folder situation. Your details stay on {thisComputer}.</p>
         </div>
 
         <FieldGroup>

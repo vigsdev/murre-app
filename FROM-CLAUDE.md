@@ -16,7 +16,7 @@
   - running with a project that was never saved: a confirm dialog, then it is saved to the Desktop as `Untitled-<date-time>.aep`, closed, and the new project is created. A toast says where it went;
   - running but the Companion is not connected: nothing is created and the message says to restart After Effects once.
 - The Companion is required. Onboarding has a last step that installs it (Finish stays disabled until it is installed; "Install it later from Settings" appears only if the install itself failed). Settings has an "After Effects Companion" section, and New Project disables the checkbox and shows the install button when it is missing.
-- Installing copies the Companion shipped in the app into `~/Library/Application Support/Adobe/CEP/extensions/com.murre.cep` (no administrator password) and sets `PlayerDebugMode` for CSXS 9–13 with `defaults write`, because the extension is not signed. A symlink in that folder (the developer link made by `npm run symlink`) is never replaced. A signed ZXP would remove the debug setting; that is not done.
+- Installing copies the Companion shipped in the app into `~/Library/Application Support/Adobe/CEP/extensions/com.murre.cep` (no administrator password) (`%APPDATA%\Adobe\CEP\extensions` on Windows). The release ships a signed package, so `PlayerDebugMode` is only set for the unsigned development folder (see "Companion ships as a signed package"). A symlink in that folder (the developer link made by `npm run symlink`) is never replaced.
 - Shipping the Companion: run `npm run bundle` in `murre-ae/`. It builds and copies the extension to `src-tauri/companion-bundle/`, which `tauri.conf.json` ships as a resource. Run it again whenever the Companion changes (and bump its version so installed copies update). Without the folder the install button says the build has no Companion.
 - The Companion has a hidden background extension (`com.murre.cep.background`, type Custom, starts on `ApplicationInitialized`, no window). It keeps the link to the app while the panel is closed. The open panel announces itself every 3 s (`murre.panel.alive` CEP event); while it is heard the helper drops its connection so the two never fight over the link, and it takes over about 9 s after the panel goes away.
 - The hidden helper does everything the panel does for the app (scan, copy and relink, cancel, create a project, say what is open), so nothing needs the panel docked. It reports which Murre project is open every ~4 s. Per-project options live in the project's Settings tab (see below).
@@ -50,10 +50,11 @@
 - Limits: opening the original is not involved (the project must already be open in After Effects). No cancel while it runs. Image sequences are not copied (same as relink). The copy step has no size prompt yet (projects are expected to be small). Not verified against real After Effects: Save As via `app.project.save(File)`, the folder dialog in the panel (`cep.fs.showOpenDialogEx`).
 
 ## Notes pages (global Notes and each project's Notes tab)
-- Page 1 is the original note and cannot be deleted. A round `+` on the right adds the next page (up to 20); `<` and `>` move between pages; `×` at the top right deletes any page except the first, with a confirmation only when the page has text. Numbered chips at the top left jump to a page (hover shows its first words).
-- Stored in the same `.murre/notes.json`: page 1 stays in `content`, the others in `pages`. Files from before this change load unchanged.
+- A list on the left names each page by its first line ("Untitled" until it has text). Click a name to open it, **New page** at the bottom adds one (up to 20), and the ✕ that shows on hover deletes a page (any but the first; it asks first when the page has text). Selecting text shows a small bar above it: bold, italic, underline, strikethrough, inline code, heading, quote. The full formatting bar stays at the top of the sheet.
+- Stored in the same `.murre/notes.json`: page 1 stays in `content`, the others in `pages`. Files from before this change load unchanged. Page names aren't stored; they are read from the text, so the file format didn't change.
 - Switching, adding or deleting a page first saves what you typed. If that save fails or conflicts, the page change waits.
-- Limitation: undo history is per page and is lost when you switch pages.
+- Every page opened in a session keeps its editor (hidden when another page shows), so undo works after switching back. Loading the version from disk after a conflict starts fresh editors.
+- No link button: links stay switched off in the editor, because clicking one would navigate Murre's own window.
 
 ## Other versions when adding a project
 - When a project is added from After Effects (the app's "From After Effects" dialog or the Companion panel's card), other `.aep` files saved in the **same folder** as the open file are listed with a checkbox each. The dialog and the panel show one tick, "Copy all N other versions (size)", which is **on by default** (most folders hold one project's versions, and an extra small file is easy to delete). "Choose which…" opens the list with Select all / Select none and a tick per file; unticking everything copies none. Files whose names look like versions of the open one are listed first.
@@ -180,7 +181,8 @@ What I expect from each, so a different result is worth reporting:
 - Fonts: bundled only when installed on this Mac. Not bundled: Adobe Fonts, anything under `/System/` (comes with macOS), fonts not found on disk. Font licenses are the designer's call; the dialog says so. The `.ttc` collections are copied whole.
 - Zip uses macOS `ditto -c -k --keepParent` (the zip opens fine on Windows). "Zip" alone makes the folder first, zips it, then removes that folder (our own). A failed build removes its half-made folder.
 - Default location is the project's `07 Deliverables` (made if missing). Names never overwrite: "X - Delivery", "X - Delivery 2"…
-- Not done / not tried: cancelling a long copy, hard links or reflinks instead of copies for big footage, image sequences from outside the project, expressions that read files by path, Windows recipients with different path habits, and a real run on a big project (only tested with small fake ones; `ditto` itself is untested here because the test machine has no macOS).
+- **Stop** replaces Cancel while it copies. It stops before the next file (a file already being copied finishes) and removes the half-made package.
+- Not done / not tried: hard links or reflinks instead of copies for big footage, image sequences from outside the project, expressions that read files by path, Windows recipients with different path habits, and a real run on a big project (only tested with small fake ones; `ditto` itself is untested here because the test machine has no macOS).
 
 ## Recent projects on Home
 - Opening a project's page saves its id in Murre's own settings (`recent_projects`, newest first, up to 12). Home shows the last four. Nothing in a project folder changes.
@@ -207,23 +209,15 @@ Known limits: only checked in a browser, not in the app. Settings and Help in th
 
 Also moving: switching a project's tabs fades the content in (about 0.15s), rows in the workfile timeline, the Home lists and the calendar day sheet fade and glide like the cards, and buttons shrink 2% while pressed. Dialogs, sheets, menus and popovers already had enter and exit animation, so those are unchanged.
 
-## Known issue: calendar swipe sticks (not fixed)
-
-On a Mac trackpad, a two-finger sideways swipe on the Calendar changes the month once. A second swipe with the cursor held still does nothing until the mouse moves. It was not reproduced in a browser test, where three swipes in a row worked.
-
-Tried, without success: keeping the same grid and cell elements when the month changes (the slide now animates the existing grid instead of replacing it), clipping the horizontal overflow, and cancelling sideways wheel events with a non-passive listener.
-
-Next things to look at: the swipe lock in `onWheel` in `calendar-page.tsx` (`lockedUntil` keeps extending while the trackpad's coasting events arrive, and may never expire on a real trackpad), and whether the Tauri webview handles the gesture differently from a browser. Logging `deltaX` and `timeStamp` from a real swipe would show which.
-
 ## Shapes on the Moodboard
 
-The board has four shapes: rectangle, ellipse, line and arrow. They are added from the shapes button at the bottom of the board (no drawing tool, no shortcut yet) and appear in the middle of the view, selected.
+The board has four shapes: rectangle, ellipse, line and arrow. They are added from the shapes button in the tool rail, or with R, O, L and A, and appear in the middle of the view, selected.
 
 One fixed look: a 3px outline in the text colour. No fill, no colour, no corner or line options. Rectangles and ellipses are outlines: until selected, only their line can be clicked, so the empty inside lets clicks through to whatever is underneath. Once selected, dragging anywhere inside moves them.
 
-Rectangles and ellipses stretch freely from the corners (resizing several things at once still keeps proportions). Lines and arrows have a handle at each end instead of corners; the arrowhead is at the end the second handle controls. Boards with shapes saved by this version show nothing for them in an older version of Murre.
+Rectangles and ellipses stretch freely from the corners; hold Shift to keep their proportions (resizing several things at once always keeps them). Lines and arrows have a handle at each end instead of corners; the arrowhead is at the end the second handle controls. Boards with shapes saved by this version show nothing for them in an older version of Murre.
 
-Not done: shortcuts for adding shapes, drawing a shape by dragging, colours, filled shapes, text inside a shape, Shift to keep proportions while resizing a rectangle. Only checked in a browser.
+Not done: drawing a shape by dragging, text inside a shape. Colour and line were added later (see "Shape color and line"). Only checked in a browser.
 
 ## Companion ships as a signed package
 
@@ -235,13 +229,14 @@ Not checked on a real Mac: that After Effects accepts the self-signed package wi
 
 The package contains a `.debug` file that opens remote-debugging ports (8970 and up, one per panel). Fine while developing; for a release, turn the debug file off in the Companion's build config and sign again.
 
-Settings > After Effects Companion has a checkbox, "Companion not showing up?", that turns `PlayerDebugMode` on or off for CSXS 9 to 13 (turning it off removes the setting). It is a system-wide Adobe setting: it lets After Effects load every panel it can't verify, not only Murre. It shows as on only when all five versions are on. After a change the row says to restart After Effects. Mac only; elsewhere it reads as off and does nothing.
+Settings > After Effects Companion has a checkbox, "Companion not showing up?", that turns `PlayerDebugMode` on or off for CSXS 9 to 13 (turning it off removes the setting). It is a system-wide Adobe setting: it lets After Effects load every panel it can't verify, not only Murre. It shows as on only when all five versions are on. After a change the row says to restart After Effects. On Windows it sets the same value in the registry (`HKCU\Software\Adobe\CSXS.<n>`).
 
 ## Tabs and the bottom fade
 
 - The tab strip sits in the title-bar row of the page card (`src/features/tabs/`). Any page can be a tab. Cmd/Ctrl-click or middle-click on an in-app link, or the `+` button, opens a new tab. Back and forward arrows follow the router history.
 - Opening a page from a project tab adds a new tab; from any other tab it replaces that tab. Tabs are remembered in `localStorage` (`murre.tabs`) and dropped when their project is deleted.
-- Limits: each tab keeps only its page, not its scroll position or the inner project tab. No keyboard shortcuts yet. Checked in the browser only, not in the Mac app.
+- Keys: ⌘T (Ctrl+T) opens a new tab, Ctrl+Tab and Ctrl+Shift+Tab move between tabs, ⌘1–⌘8 pick a tab and ⌘9 the last one.
+- Limits: each tab keeps only its page, not its scroll position or the inner project tab.
 - The soft blur (`edge-blur.tsx`) is only at the top edge: a few pixels of backdrop blur faded out with a mask, shown once a page has scrolled. There is no bottom blur (tried and removed). Tabs that overflow the strip fade at the edges.
 - Page headers now start below the strip (`--tabstrip-h`); the sidebar button moved into the strip. Settings, New project and the coming-soon pages have no title row or line any more (`PageTop`); the tab names the page.
 
@@ -370,10 +365,44 @@ The Companion changes that used to wait in `companion-updates/` are now in `murr
 - The month changes with the arrows, Today, the small month, or a click on an upcoming deadline. Scrolling does not change the month, and the colour key under the grid was removed.
 - Not built: Day, Week and Year views. Murre's items have no times, so Day and Week would be mostly empty.
 
-## Time card: live animation
+## Time card
 
-- While After Effects has a project open, its row on the Time card is "live": the dot beside the name pulses a soft ring, light sweeps along the bar, a small dot sits at the end of the bar, and the bar, the "now" line and the total keep counting up every second. In the 7 and 30 day views today's cell pulses instead.
-- The card reads the log again about a second and a half after a project opens or closes in After Effects, so it no longer waits up to 30 seconds. It still refreshes every 30 seconds.
-- With "reduce motion" turned on in macOS, the pulsing and the sweep are switched off.
-- On a day-long scale the bar grows too slowly to see (a few seconds is a fraction of a pixel). The pulse, the sweep and the end dot are what show that it is counting.
-- Needs a rebuild of the app (a new `live` field comes from the Rust side). Checked in a browser preview with made-up data and in unit tests, not with real After Effects.
+- The card reads the log again about a second and a half after a project opens or closes in After Effects, and every 30 seconds.
+- The project open in After Effects right now gets the keyframe diamond on the timeline. The pulsing ring and the light sweep were removed in the unslop pass (Home): they moved for no reason.
+
+## Windows: Companion link
+
+- The panel and the hidden helper take turns holding the link to the app. Each panel beat now says whether the panel holds the link. If the panel is open but has had no link for 15 s, the helper holds it meanwhile, and the app hands it back as soon as the panel gets through.
+- If the panel says it's closing but is still running 2 s later (Windows can fire `beforeunload`/`pagehide` without closing), it takes the link back.
+- Both print every step to their console as `[Murre link · main]` / `[Murre link · background]`. The app writes connects, disconnects and refusals (with the reason) to `murre.log`, skipping repeats.
+- Debug ports moved from 8860 to 8970 and up (8860 is the common default; Motion Tools Pro took it).
+- Windows only: a single-instance guard (`tauri-plugin-single-instance`) shows the running window instead of starting a second Murre, and the app writes its install path to `app-location.json` so the panel's Murre button can start it.
+
+## Moodboard layout
+
+- Tools float over the board: a rail on the left (image, text, link, shapes), the selection bar under the selection (above it when there's no room), zoom bottom-right, and an add bar bottom-centre while the board is empty. All share `FLOAT_PANEL` in `board-canvas.tsx`.
+- One image selected: **Send to AE** in the selection bar (an SVG asks: as shapes or as a layer). Right-click still works.
+
+## Assets tab
+
+- Top to bottom: the footage line (one quiet line when everything is inside; the full card with Copy & relink otherwise), Storage (one bar by kind of file, from `asset_storage`), then a folder tree with sizes on the left and the folder's contents on the right.
+- Contents: folder cards with file count and size; files as a grid with thumbnails (`asset_thumbnail`, FFmpeg, two at a time, cached) or a list. Search this folder, kind chips, and Used in AE / Not used once the project has been scanned.
+- "Used" comes from the last Companion scan (`.murre/assets.json`), matched by path. A file added in After Effects since then shows as not used until the next scan. Only footage kinds can be "Not used". No thumbnails for PSD or AI.
+
+## Unslop pass (whole app)
+
+- No status-coloured wash behind the project header. Covers without a render are the project's initials on a soft tone of its own colour (`projectColor`), not a two-hue gradient. The quick switcher is a solid popover. Headings are weight 500, labels sentence case.
+- The keyframe diamond stays reserved for deadlines and the project open in After Effects.
+
+
+## Reading the .aep file itself
+
+- `src-tauri/src/aep_file.rs` reads an `.aep` directly, read-only (files are only opened for reading), with no After Effects or Companion. Results are cached for the session per file size and date. The format isn't documented; it was worked out from real projects and checked against the Companion's own records (155/155 and 144/144 comps, every footage path, every font). Anything unexpected is skipped, so a later After Effects that moves things gives less, not something wrong.
+- What it reads: the version that saved the file ("27.1", build, Beta, Mac or Windows), the created and saved times written inside the file, the XMP document ids that link a file to the one it was saved from, comps (id, name, size, fps, duration), footage paths, effect match names, fonts (minus three text-engine defaults that every file lists) and render queue output folders.
+- **Versions (Project tab):** each version shows "AE 27.1 Beta" and "saved from v1", a warning when it was saved by an After Effects newer than any installed here, "Other project file" for a file that started as a different document (a template, or another project's file), and its auto-saves under the version they came from, each with Open in AE. Each version's menu has **What changed since …**: comps added, removed or changed (size, fps, duration, renamed), footage added or no longer used, new effects, fonts in and out. Compared with the file it was saved from, else the next older one.
+- **Renders:** before aerender starts, the comp is looked up in the saved file by its id. If it's gone the render stops with a message; if it was renamed, the new name is used (aerender picks comps by name). Unreadable files fall back to the scan as before.
+- **Not scanned yet:** the needs card (version, fonts, plugins) and the footage list (missing / inside / outside, checked on disk) come from the project's main `.aep` (the current one, else the newest), and say so. Fonts from the file show as unchecked, since only the scan knows what this computer has. Copy and relink still needs the Companion.
+- **Project cards** show "1920×1080 · 30 fps · 155 comps": the Main Comp's format, else the most common one.
+- **⌘K** also finds footage file names, fonts and effects inside every project's main `.aep` (three letters or more).
+- **Archiving** warns when files the project uses sit outside its folder (or are missing), since they aren't archived with it. Only from the Projects page; dragging to Archived on Home doesn't warn.
+- Not read: expressions, layer details, comp thumbnails. Not done: comps from the file in the Renders tab when there's no scan (Main Comps are still chosen in the Companion).

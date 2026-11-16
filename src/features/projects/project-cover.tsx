@@ -2,16 +2,16 @@ import { useEffect, useRef, useState } from "react"
 import { enqueue } from "./detail/render-thumb"
 import { api } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
-import { projectGradient } from "./project-utils"
+import { projectColor } from "./project-utils"
 
-/** One lookup per project per session; `null` means "no thumbnail, show the gradient". */
+/** One lookup per project per session; `null` means "no thumbnail, show the initials". */
 const covers = new Map<string, string | null>()
 let toolsPromise: Promise<boolean> | null = null
 const ffmpegAvailable = () => (toolsPromise ??= api.getMediaTools().then((t) => !!t.ffmpeg).catch(() => false))
 
 /**
  * The picture at the top of a project card or page: a frame from the newest
- * render when there is one, otherwise a gradient made from the project name.
+ * render when there is one, otherwise the project's initials on a soft tone of its own colour.
  */
 export function ProjectCover({
   projectId,
@@ -54,7 +54,7 @@ export function ProjectCover({
             covers.set(projectId, thumb)
             if (!controller.signal.aborted) setUrl(thumb)
           } catch {
-            // keep the gradient; try again next session
+            // keep the initials; try again next session
           }
         })()
       },
@@ -68,9 +68,29 @@ export function ProjectCover({
   }, [projectId, available])
 
   return (
-    <div ref={ref} className={cn("relative overflow-hidden", className)} style={{ backgroundImage: projectGradient(name) }}>
-      {url && <img src={url} alt="" className="absolute inset-0 size-full object-cover" draggable={false} />}
+    <div
+      ref={ref}
+      className={cn("@container relative overflow-hidden", className)}
+      style={{ background: `color-mix(in oklch, ${projectColor(name)} 22%, var(--muted))` }}
+    >
+      {url ? (
+        <img src={url} alt="" className="absolute inset-0 size-full object-cover" draggable={false} />
+      ) : (
+        <span aria-hidden className="absolute inset-0 flex items-center justify-center text-[28cqi] font-medium text-foreground/60 select-none">
+          {initialsOf(name)}
+        </span>
+      )}
       {children}
     </div>
   )
+}
+
+/** Up to two letters from the project's name: the first letters of its first two words. */
+function initialsOf(name: string): string {
+  const words = name.match(/[\p{L}\p{N}]+/gu) ?? []
+  return words
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
 }

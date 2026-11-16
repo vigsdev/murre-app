@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils"
-import { Circle, FileUp, Link2, Minus, MoveRight, Shapes, Square, Type, TriangleAlert } from "lucide-react"
+import { Circle, ImagePlus, Link2, Minus, MoveRight, Shapes, Square, Type, TriangleAlert } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { BoardCanvas, type BoardHandle } from "@/features/references/board-canvas"
+import { BoardCanvas, FLOAT_PANEL, type BoardHandle } from "@/features/references/board-canvas"
 import { emptyBoard, normalizeUrl, parseBoard, type Board } from "@/features/references/board"
 import { isTldrawCanvas, migrateTldraw } from "@/features/references/migrate-tldraw"
 import { registerFlush } from "@/lib/flush-registry"
@@ -67,6 +67,8 @@ export function ReferencesTab({ projectId, fill = false }: { projectId: string |
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkText, setLinkText] = useState("")
   const [linkError, setLinkError] = useState<string | null>(null)
+  /** Whether the board has anything on it; an empty one gets the labelled add bar at the bottom. */
+  const [empty, setEmpty] = useState(true)
 
   const boardRef = useRef<BoardHandle>(null)
   const frame = useRef<HTMLDivElement>(null)
@@ -124,6 +126,7 @@ export function ReferencesTab({ projectId, fill = false }: { projectId: string |
   const markDirty = useCallback(
     (board: Board) => {
       latestBoard.current = board
+      setEmpty(board.items.length === 0)
       if (blocked.current) return
       dirty.current = true
       setSave({ kind: "unsaved" })
@@ -143,6 +146,7 @@ export function ReferencesTab({ projectId, fill = false }: { projectId: string |
     (view: { canvas: Record<string, unknown> | null; updatedAt: number | null }) => {
       const read = readCanvas(view.canvas)
       latestBoard.current = read.board
+      setEmpty(read.board.items.length === 0)
       blocked.current = read.unsupported
       dirty.current = false
       setLoad({ status: "ready", board: read.board, unsupported: read.unsupported, converted: read.converted })
@@ -292,38 +296,51 @@ export function ReferencesTab({ projectId, fill = false }: { projectId: string |
         )}
       </p>
 
-      <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-lg border bg-popover p-1 text-popover-foreground">
-        <Button variant="ghost" size="icon-sm" disabled={unsupported} aria-label="Add image or file" title="Add image or file (I)" onClick={openFile}>
-          <FileUp />
-        </Button>
-        <Button variant="ghost" size="icon-sm" disabled={unsupported} aria-label="Add text" title="Add text (T)" onClick={() => boardRef.current?.addText()}>
+      {/* Tools float over the board, as in a design app: the rail on the left, and an add bar while the board is empty. */}
+      <div className={cn(FLOAT_PANEL, "absolute top-3 left-3 z-10 flex flex-col gap-0.5")}>
+        <RailButton label="Add image or file (I)" disabled={unsupported} onClick={openFile}>
+          <ImagePlus />
+        </RailButton>
+        <RailButton label="Add text (T)" disabled={unsupported} onClick={() => boardRef.current?.addText()}>
           <Type />
-        </Button>
-        <Button variant="ghost" size="icon-sm" disabled={unsupported} aria-label="Add link" title="Add link (K)" onClick={openLink}>
+        </RailButton>
+        <RailButton label="Add link (K)" disabled={unsupported} onClick={openLink}>
           <Link2 />
-        </Button>
+        </RailButton>
         <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon-sm" disabled={unsupported} aria-label="Add shape" title="Add shape" />}
-          >
+          <DropdownMenuTrigger render={<RailButton label="Add shape" disabled={unsupported} more />}>
             <Shapes />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" side="top">
+          <DropdownMenuContent align="start" side="right" sideOffset={8}>
             <DropdownMenuItem onClick={() => boardRef.current?.addShape("rect")}>
-              <Square /> Rectangle
+              <Square /> Rectangle <Kbd>R</Kbd>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => boardRef.current?.addShape("ellipse")}>
-              <Circle /> Ellipse
+              <Circle /> Ellipse <Kbd>O</Kbd>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => boardRef.current?.addShape("line")}>
-              <Minus /> Line
+              <Minus /> Line <Kbd>L</Kbd>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => boardRef.current?.addShape("arrow")}>
-              <MoveRight /> Arrow
+              <MoveRight /> Arrow <Kbd>A</Kbd>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {empty && !unsupported && (
+        <div className={cn(FLOAT_PANEL, "absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1")}>
+          <Button variant="ghost" size="lg" className="rounded-lg [&_svg]:size-[18px]" onClick={openFile}>
+            <ImagePlus /> Add image
+          </Button>
+          <Button variant="ghost" size="lg" className="rounded-lg [&_svg]:size-[18px]" onClick={openLink}>
+            <Link2 /> Add link
+          </Button>
+          <Button variant="ghost" size="lg" className="rounded-lg [&_svg]:size-[18px]" onClick={() => boardRef.current?.addText()}>
+            <Type /> Add text
+          </Button>
+        </div>
+      )}
       <input
         ref={fileInput}
         type="file"
@@ -378,6 +395,28 @@ export function ReferencesTab({ projectId, fill = false }: { projectId: string |
       </Dialog>
     </div>
   )
+}
+
+/**
+ * A tool in the rail. `more` adds the small corner mark that says it opens a choice (the shapes). Props are passed
+ * on, so it also works as a menu trigger.
+ */
+function RailButton({ label, more = false, children, ...props }: React.ComponentProps<typeof Button> & { label: string; more?: boolean }) {
+  return (
+    <Button {...props} type="button" variant="ghost" size="icon-lg" aria-label={label} title={label} className="relative rounded-lg [&_svg]:size-[18px]">
+      {children}
+      {more && (
+        <svg aria-hidden viewBox="0 0 6 6" className="absolute right-1 bottom-1 size-1.5! fill-current opacity-60">
+          <path d="M6 0v6H0z" />
+        </svg>
+      )}
+    </Button>
+  )
+}
+
+/** A shortcut key at the end of a menu item. */
+function Kbd({ children }: { children: string }) {
+  return <kbd className="ml-auto rounded border px-1.5 font-mono text-xs text-muted-foreground">{children}</kbd>
 }
 
 function Banner({ title, children }: { title: string; children: React.ReactNode }) {

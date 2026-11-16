@@ -47,7 +47,7 @@ export function AppSidebar() {
           className="flex items-center gap-3 rounded-xl px-2 py-1.5 outline-hidden"
         >
           <UserAvatar name={profile.name} src={profile.avatarDataUrl} size="lg" />
-          <span className="min-w-0 truncate text-base font-semibold tracking-tight">{spaceName(profile.name)}</span>
+          <span className="min-w-0 truncate text-base font-medium tracking-tight">{spaceName(profile.name)}</span>
         </NavLink>
         <SidebarMenu>
           <SidebarMenuItem>

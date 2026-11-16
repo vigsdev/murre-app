@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 import type { JSONContent } from "@tiptap/react"
-import { ChevronLeft, ChevronRight, Plus, TriangleAlert, X } from "lucide-react"
+import { Plus, TriangleAlert, X } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { RichTextEditor } from "@/components/rich-text-editor"
@@ -29,6 +29,12 @@ function textOf(node: JSONContent | null | undefined): string {
   if (!node) return ""
   const own = typeof node.text === "string" ? node.text : ""
   return [own, ...(node.content ?? []).map(textOf)].join(" ").replace(/\s+/g, " ").trim()
+}
+
+/** A page's name: its first line, the way a notes app names a note. */
+function pageName(content: JSONContent | null | undefined): string {
+  const first = content?.content?.find((n) => textOf(n))
+  return textOf(first).slice(0, 80)
 }
 
 type Load =
@@ -67,8 +73,9 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
   const [pages, setPages] = useState<Page[]>([{ id: null, content: null }])
   const pagesRef = useRef<Page[]>(pages)
   const [current, setCurrent] = useState(0)
-  const [shown, setShown] = useState<{ key: string; content: JSONContent | null }>({ key: "0-first", content: null })
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  // Every page opened so far keeps its editor (hidden when not shown), so its undo history survives switching pages.
+  const [editors, setEditors] = useState<{ key: string; content: JSONContent | null }[]>([{ key: "0-first", content: null }])
+  const [shownKey, setShownKey] = useState("0-first")
 
   // Inside a project page the editor takes whatever window height is left below the tabs (the page header and banner
   // above it vary), so it always fills the window and follows resizing.
@@ -105,11 +112,15 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
     if (mounted.current) setPages(next)
   }
 
-  /** Open page `index` of the saved pages, giving the editor that page's content. */
+  const editorKeyOf = (gen: number, id: string | null) => `${gen}-${id ?? "first"}`
+
+  /** Open page `index` of the saved pages: its editor if it was open before, else a new one with that page's content. */
   const showPage = (index: number, from: Page[] = pagesRef.current) => {
     const i = Math.min(Math.max(index, 0), from.length - 1)
+    const key = editorKeyOf(editorKey, from[i].id)
     setCurrent(i)
-    setShown({ key: `${editorKey}-${from[i].id ?? "first"}`, content: from[i].content })
+    setEditors((list) => (list.some((e) => e.key === key) ? list : [...list, { key, content: from[i].content }]))
+    setShownKey(key)
     setUnsupported(false)
   }
 
@@ -159,7 +170,8 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
         pagesRef.current = all
         setPages(all)
         setCurrent(0)
-        setShown({ key: "0-first", content: all[0].content })
+        setEditors([{ key: "0-first", content: all[0].content }])
+        setShownKey("0-first")
         setLoad({ status: "ready", content: view.content as JSONContent | null })
         setSave({ kind: "saved", at: view.updatedAt })
       })
@@ -213,7 +225,10 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
       setEditorKey((k) => k + 1)
       const i = Math.min(current, all.length - 1)
       setCurrent(i)
-      setShown({ key: `r${editorKey + 1}-${all[i].id ?? "first"}`, content: all[i].content })
+      // Fresh editors from what is on disk; the old ones (and their undo) belong to a version that was replaced.
+      const key = editorKeyOf(editorKey + 1, all[i].id)
+      setEditors([{ key, content: all[i].content }])
+      setShownKey(key)
     } catch (e) {
       setSave({ kind: "error", message: errorMessage(e) })
     }
@@ -258,17 +273,21 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
       }
     })
 
-  const removePage = () =>
+  /** Delete page `index` (never the first). The open page stays open, or its neighbour when it is the one deleted. */
+  const removePage = (index: number) =>
     void afterSave(async () => {
-      const id = pagesRef.current[current]?.id
+      const id = pagesRef.current[index]?.id
       if (!id) return
+      const openId = pagesRef.current[current]?.id ?? null
       try {
         const view = await api.deleteNotesPage(projectId, id, revision.current)
         revision.current = view.revision
         const all = pagesOf(view)
         pagesRef.current = all
         setPages(all)
-        showPage(current - 1, all)
+        setEditors((list) => list.filter((e) => e.key !== editorKeyOf(editorKey, id)))
+        if (index === current) showPage(index - 1, all)
+        else setCurrent(Math.max(0, all.findIndex((p) => p.id === openId)))
       } catch (e) {
         if (isConflictError(e)) {
           blocked.current = true
@@ -277,7 +296,14 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
       }
     })
 
-  const bar = pages.length > 1
+  /** The open page's name follows what is being typed, before it is saved. */
+  const nameOf = (i: number) => {
+    const page = pages[i]
+    const typed = i === current && latest.current && latest.current.id === (page?.id ?? null) ? latest.current.doc : null
+    return pageName(typed ?? page?.content) || "Untitled"
+  }
+  const hasText = (i: number) => !!(textOf(pages[i]?.content) || (i === current && textOf(latest.current?.doc)))
+  const [deleting, setDeleting] = useState<number | null>(null)
 
   if (load.status === "loading") return <Skeleton className="h-72" />
 
@@ -297,44 +323,92 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
   return (
     <div
       ref={frame}
-      className={cn("relative", fill ? "min-h-0 flex-1" : "overflow-hidden rounded-xl border")}
+      className={cn("relative flex", fill ? "min-h-0 flex-1" : "overflow-hidden rounded-xl border")}
       style={fill ? undefined : { height: fitHeight ?? 480 }}
     >
-      <div className={cn("absolute inset-x-3 z-20 mx-auto flex max-w-xl flex-col gap-2", bar ? "top-14" : "top-3")}>
-      {conflict && (
-        <Banner title="These notes were changed somewhere else">
-          Your edits have not been saved. You can load the version on disk (your unsaved edits are discarded), or
-          replace it with what you have here.
-          <div className="mt-2 flex gap-2">
-            <Button size="xs" variant="outline" onClick={() => void reloadFromDisk()}>
-              Load version from disk
-            </Button>
-            <Button size="xs" variant="outline" onClick={() => void overwriteWithMine()}>
-              Overwrite with my version
-            </Button>
-          </div>
-        </Banner>
-      )}
-      {unsupported && (
-        <Banner title="This note can't be shown by this version of Murre">
-          It contains content the editor doesn't understand, so it is read-only to avoid losing anything. The file on
-          disk has not been changed.
-        </Banner>
-      )}
-      </div>
+      {/* Pages, named by their first line. The first page is always there; the others can be deleted. */}
+      <nav aria-label="Pages" className="flex w-56 shrink-0 flex-col border-r">
+        <ul className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+          {pages.map((p, i) => (
+            <li key={p.id ?? "first"} className="group/page relative">
+              <button
+                type="button"
+                aria-current={i === current ? "page" : undefined}
+                title={nameOf(i)}
+                onClick={() => (i === current ? undefined : goTo(i))}
+                className={cn(
+                  "flex h-9 w-full items-center rounded-lg px-3 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  i > 0 && "pr-9",
+                  i === current ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                )}
+              >
+                <span className={cn("truncate", nameOf(i) === "Untitled" && "text-muted-foreground/70")}>{nameOf(i)}</span>
+              </button>
+              {i > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="absolute top-1/2 right-1.5 -translate-y-1/2 opacity-0 group-hover/page:opacity-100 focus-visible:opacity-100"
+                  aria-label={`Delete “${nameOf(i)}”`}
+                  title="Delete page"
+                  onClick={() => (hasText(i) ? setDeleting(i) : removePage(i))}
+                >
+                  <X />
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+        <div className="border-t p-2">
+          <Button
+            variant="ghost"
+            className="h-9 w-full justify-start rounded-lg px-3 text-muted-foreground hover:text-foreground"
+            disabled={pages.length >= MAX_PAGES}
+            title={pages.length >= MAX_PAGES ? `${MAX_PAGES} pages is the most for now` : undefined}
+            onClick={addPage}
+          >
+            <Plus /> New page
+          </Button>
+        </div>
+      </nav>
 
-      <RichTextEditor
-        key={shown.key}
-        content={shown.content}
-        className={bar ? "absolute inset-x-0 top-11 bottom-0" : "absolute inset-0"}
-        disabled={unsupported}
-        onChange={onChange}
-        onContentError={onContentError}
-        placeholder={placeholder ?? "Write project notes, briefs, feedback…"}
-      />
+      <div className="relative min-w-0 flex-1">
+        <div className="absolute inset-x-3 top-3 z-20 mx-auto flex max-w-xl flex-col gap-2">
+          {conflict && (
+            <Banner title="These notes were changed somewhere else">
+              Your edits have not been saved. You can load the version on disk (your unsaved edits are discarded), or
+              replace it with what you have here.
+              <div className="mt-2 flex gap-2">
+                <Button size="xs" variant="outline" onClick={() => void reloadFromDisk()}>
+                  Load version from disk
+                </Button>
+                <Button size="xs" variant="outline" onClick={() => void overwriteWithMine()}>
+                  Overwrite with my version
+                </Button>
+              </div>
+            </Banner>
+          )}
+          {unsupported && (
+            <Banner title="This note can't be shown by this version of Murre">
+              It contains content the editor doesn't understand, so it is read-only to avoid losing anything. The file on
+              disk has not been changed.
+            </Banner>
+          )}
+        </div>
 
-      <div className={cn("absolute right-4 z-30 flex items-center gap-2", bar ? "top-1.5" : "top-3")}>
-        <p role="status" className="text-xs text-muted-foreground" aria-live="polite">
+        {editors.map((e) => (
+          <RichTextEditor
+            key={e.key}
+            content={e.content}
+            className={cn("absolute inset-0", e.key !== shownKey && "hidden")}
+            disabled={unsupported}
+            onChange={onChange}
+            onContentError={onContentError}
+            placeholder={placeholder ?? "Write project notes, briefs, feedback…"}
+          />
+        ))}
+
+        <p role="status" className="absolute top-3 right-4 z-30 text-xs text-muted-foreground" aria-live="polite">
           {statusText(save)}
           {save.kind === "error" && (
             <Button size="xs" variant="link" onClick={() => void flush()}>
@@ -342,57 +416,12 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
             </Button>
           )}
         </p>
-        {current > 0 && (
-          <Button
-            variant="secondary"
-            size="icon-sm"
-            className="rounded-full"
-            aria-label="Delete this page"
-            onClick={() => (textOf(pages[current]?.content) || textOf(latest.current?.doc) ? setConfirmDelete(true) : removePage())}
-          >
-            <X />
-          </Button>
-        )}
       </div>
 
-      {pages.length > 1 && (
-        <nav aria-label="Pages" className="absolute top-0 left-4 right-56 z-30 flex h-11 items-center gap-1 overflow-x-auto">
-          {pages.map((p, i) => (
-            <Button
-              key={p.id ?? "first"}
-              size="xs"
-              variant={i === current ? "secondary" : "ghost"}
-              aria-current={i === current ? "page" : undefined}
-              title={textOf(p.content).slice(0, 60) || `Page ${i + 1}`}
-              onClick={() => (i === current ? undefined : goTo(i))}
-            >
-              {i + 1}
-            </Button>
-          ))}
-        </nav>
-      )}
-
-      {current > 0 && (
-        <Button variant="secondary" size="icon-lg" className="absolute top-1/2 left-4 z-30 -translate-y-1/2 rounded-full shadow-md" aria-label="Previous page" onClick={() => goTo(current - 1)}>
-          <ChevronLeft />
-        </Button>
-      )}
-      {current < pages.length - 1 ? (
-        <Button variant="secondary" size="icon-lg" className="absolute top-1/2 right-4 z-30 -translate-y-1/2 rounded-full shadow-md" aria-label="Next page" onClick={() => goTo(current + 1)}>
-          <ChevronRight />
-        </Button>
-      ) : (
-        pages.length < MAX_PAGES && (
-          <Button variant="secondary" size="icon-lg" className="absolute top-1/2 right-4 z-30 -translate-y-1/2 rounded-full shadow-md" aria-label="Add a page" onClick={addPage}>
-            <Plus />
-          </Button>
-        )
-      )}
-
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete page {current + 1}?</AlertDialogTitle>
+            <AlertDialogTitle>Delete “{deleting !== null ? nameOf(deleting) : ""}”?</AlertDialogTitle>
             <AlertDialogDescription>The text on this page is deleted with it. This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -400,8 +429,9 @@ export function NotesTab({ projectId, placeholder, fill = false }: { projectId: 
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
-                setConfirmDelete(false)
-                removePage()
+                const i = deleting
+                setDeleting(null)
+                if (i !== null) removePage(i)
               }}
             >
               Delete page

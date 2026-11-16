@@ -102,6 +102,18 @@ export function ProjectsPage({ spaceId }: { spaceId?: string }) {
     try {
       await api.updateProject({ ...input, status: "archived" })
       await reload()
+      // Archiving the folder leaves behind files the project uses from elsewhere: say so, once.
+      void api
+        .footageProblems(p.id)
+        .then(([outside, missing]) => {
+          if (outside > 0)
+            toast.warning(
+              `${outside} ${outside === 1 ? "file" : "files"} “${p.name}” uses ${outside === 1 ? "sits" : "sit"} outside its folder, so ${outside === 1 ? "it isn’t" : "they aren’t"} archived with it. Copy and relink from the Assets tab to keep everything together.`,
+              { duration: 10000 },
+            )
+          else if (missing > 0) toast.warning(`${missing} ${missing === 1 ? "file" : "files"} “${p.name}” uses ${missing === 1 ? "is" : "are"} already missing.`)
+        })
+        .catch(() => {})
       toast.success(`“${p.name}” archived. Out of sight, not gone.`, {
         action: {
           label: "Undo",

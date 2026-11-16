@@ -56,6 +56,9 @@ pub struct NeedsView {
     pub fonts_method: String,
     pub fonts: Vec<NeedFont>,
     pub plugins: Vec<NeedPlugin>,
+    /// Set (to the `.aep`'s project-relative path) when fonts, plugins and the version were read from the saved
+    /// project file because the Companion hasn't scanned the project. `scanned` stays false.
+    pub from_file: Option<String>,
 }
 
 /// Effects that are not separate plugins: After Effects' own, preset ("pseudo") effects that live inside the project
@@ -180,6 +183,15 @@ fn installed_years(apps: &Path) -> Vec<String> {
     found.into_iter().map(|(_, label)| label).collect()
 }
 
+/// The newest After Effects installed here, as its major version (2026 → 26). `None` when none is found.
+pub fn newest_installed_major() -> Option<u32> {
+    installed_years(apps_dir())
+        .iter()
+        .filter_map(|y| y.get(0..4)?.parse::<u32>().ok())
+        .map(|y| y.saturating_sub(2000))
+        .max()
+}
+
 /// "25.0x1" → 25.
 fn major(version: &str) -> Option<u32> {
     version.split(|c: char| !c.is_ascii_digit()).next()?.parse().ok()
@@ -194,7 +206,41 @@ fn label(v: &Value, key: &str) -> Option<String> {
 }
 
 pub fn get(root: &Path) -> AppResult<NeedsView> {
-    get_with(root, &default_plugin_dirs(), apps_dir())
+    let mut view = get_with(root, &default_plugin_dirs(), apps_dir())?;
+    if !view.scanned
+        && let Some((rel, info)) = crate::aep_file::project_aep(root)
+    {
+        fill_from_file(&mut view, rel, &info, &default_plugin_dirs());
+    }
+    Ok(view)
+}
+
+/// Fonts, plugins and version from the saved `.aep`, for a project the Companion hasn't scanned. Fonts can't be
+/// checked against this computer without the scan, so their state is `unchecked`.
+fn fill_from_file(view: &mut NeedsView, rel: String, info: &crate::aep_file::AepInfo, plugin_dirs: &[PathBuf]) {
+    view.from_file = Some(rel);
+    // The file lists every font its text layers use, like After Effects' own project font list.
+    view.fonts_method = "project".into();
+    if let (Some(v), Some(b)) = (&info.saved_with, info.build) {
+        view.ae_version = Some(format!("{v}x{b}"));
+    }
+    view.fonts = info
+        .fonts
+        .iter()
+        .map(|f| NeedFont { label: f.clone(), post_script_name: f.clone(), state: "unchecked".into() })
+        .collect();
+    let plugins: Vec<&String> = info.effects.iter().filter(|m| !is_bundled_effect(m, m)).collect();
+    if !plugins.is_empty() {
+        let names = plugin_names(plugin_dirs);
+        view.plugins = plugins
+            .into_iter()
+            .map(|m| NeedPlugin { seen_installed: looks_installed(&names, m, m), name: m.clone(), match_name: m.clone(), layer_count: 0 })
+            .collect();
+    }
+    if let (Some(v), false) = (info.major, view.ae_installed.is_empty()) {
+        let newest = view.ae_installed.iter().filter_map(|y| y.split_whitespace().next()?.parse::<u32>().ok()).map(|y| y.saturating_sub(2000)).max();
+        view.ae_ok = newest.map(|n| n >= v);
+    }
 }
 
 pub fn get_with(root: &Path, plugin_dirs: &[PathBuf], apps: &Path) -> AppResult<NeedsView> {

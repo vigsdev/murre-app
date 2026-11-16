@@ -435,10 +435,25 @@ pub fn plan(root: &Path, req: &RenderRequest) -> AppResult<Plan> {
     if !comp.main {
         return invalid("Only Main Comps can be rendered. Mark it as a Main Comp in the Companion first.");
     }
-    if view.comps.iter().filter(|c| c.name == comp.name).count() > 1 {
+    // The saved file is what aerender opens, and it picks the comp by name: check the comp is still in it, under
+    // which name now. When the file can't be read, the last scan's name is used as before.
+    let mut comp_name = comp.name.clone();
+    let mut names: Vec<String> = view.comps.iter().map(|c| c.name.clone()).collect();
+    if let Ok(saved) = crate::aep_file::read(&aep)
+        && !saved.comps.is_empty()
+    {
+        let Some(now) = saved.comps.iter().find(|c| c.id as i64 == comp.id) else {
+            return invalid(format!(
+                "“{}” is no longer in the saved project file. It was deleted or the file was replaced since the last scan. Scan the project again in After Effects.",
+                comp.name
+            ));
+        };
+        comp_name = now.name.clone();
+        names = saved.comps.iter().map(|c| c.name.clone()).collect();
+    }
+    if names.iter().filter(|n| **n == comp_name).count() > 1 {
         return invalid(format!(
-            "More than one composition is named “{}”, and aerender picks compositions by name. Rename one in After Effects and scan again.",
-            comp.name
+            "More than one composition is named “{comp_name}”, and aerender picks compositions by name. Rename one in After Effects and scan again."
         ));
     }
 
@@ -494,7 +509,7 @@ pub fn plan(root: &Path, req: &RenderRequest) -> AppResult<Plan> {
         "-project".into(),
         aep.to_string_lossy().into_owned(),
         "-comp".into(),
-        comp.name.clone(),
+        comp_name.clone(),
         "-output".into(),
         output.to_string_lossy().into_owned(),
     ];
@@ -511,7 +526,7 @@ pub fn plan(root: &Path, req: &RenderRequest) -> AppResult<Plan> {
     Ok(Plan {
         aep,
         comp_id: comp.id,
-        comp_name: comp.name.clone(),
+        comp_name,
         output,
         args,
         warnings,
@@ -569,6 +584,18 @@ mod tests {
 
     fn err(f: &Fixture, req: &RenderRequest) -> String {
         plan(f.root(), req).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn the_saved_file_decides_the_comp_name_and_whether_it_is_still_there() {
+        // The saved file has comp 1 as "Main Comp" (renamed since the scan) and no comp 3.
+        let f = Fixture::new();
+        fs::write(f.root().join("01 AE/film_v01.aep"), crate::aep_file::tests::sample("d", "d", None)).unwrap();
+        let p = plan(f.root(), &f.req()).unwrap();
+        assert_eq!(p.comp_name, "Main Comp");
+        assert!(p.args.contains(&"Main Comp".to_string()));
+        let gone = RenderRequest { comp_id: 3, ..f.req() };
+        assert!(err(&f, &gone).contains("no longer in the saved project file"), "{}", err(&f, &gone));
     }
 
     #[test]

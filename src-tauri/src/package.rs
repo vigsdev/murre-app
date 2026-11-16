@@ -538,8 +538,33 @@ fn readme(name: &str, c: &PackageCheck, with_fonts: bool, with_versions: bool) -
     s
 }
 
-fn copy_all(items: &[&CopyItem], dest: &Path, done: &mut u64, total: u64, step: &str, progress: &mut dyn FnMut(&Progress)) -> AppResult<()> {
+/// Set by "Stop" in the Package window; the copy stops before its next file (a file already being copied finishes).
+static CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub const CANCELLED: &str = "Packaging stopped. The half-made package was removed; nothing else was touched.";
+
+/// Ask a running package to stop.
+pub fn request_cancel() {
+    CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn check_cancel(cancel: &std::sync::atomic::AtomicBool) -> AppResult<()> {
+    if cancel.load(std::sync::atomic::Ordering::SeqCst) {
+        return invalid(CANCELLED);
+    }
+    Ok(())
+}
+
+fn copy_all(
+    items: &[&CopyItem],
+    dest: &Path,
+    done: &mut u64,
+    total: u64,
+    step: &str,
+    progress: &mut dyn FnMut(&Progress),
+    cancel: &std::sync::atomic::AtomicBool,
+) -> AppResult<()> {
     for it in items {
+        check_cancel(cancel)?;
         let to = dest.join(&it.rel);
         if let Some(parent) = to.parent() {
             fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
@@ -610,6 +635,18 @@ fn zip_folder(src: &Path, out: &Path) -> std::io::Result<()> {
 /// Make the package. Refuses when there is no workfile, or when footage is missing or outside the project and
 /// `allow_problems` is off. A failure part-way removes the half-made package.
 pub fn build(root: &Path, name: &str, opts: &BuildOptions, progress: &mut dyn FnMut(&Progress)) -> AppResult<BuildReport> {
+    CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+    build_with(root, name, opts, progress, &CANCEL)
+}
+
+/// `build`, stopping when `cancel` is set.
+fn build_with(
+    root: &Path,
+    name: &str,
+    opts: &BuildOptions,
+    progress: &mut dyn FnMut(&Progress),
+    cancel: &std::sync::atomic::AtomicBool,
+) -> AppResult<BuildReport> {
     if !["folder", "zip", "both"].contains(&opts.format.as_str()) {
         return invalid("Choose folder, zip or both.");
     }
@@ -647,7 +684,7 @@ pub fn build(root: &Path, name: &str, opts: &BuildOptions, progress: &mut dyn Fn
 
     let result = (|| -> AppResult<BuildReport> {
         fs::create_dir_all(&folder).map_err(|e| AppError::io(&folder, e))?;
-        copy_all(&list, &folder, &mut done, total, "Copying files", progress)?;
+        copy_all(&list, &folder, &mut done, total, "Copying files", progress, cancel)?;
         let note = readme(name, &p.check, opts.include_fonts, opts.include_other_versions);
         let note_path = folder.join("READ ME - what this project needs.txt");
         fs::write(&note_path, note).map_err(|e| AppError::io(&note_path, e))?;
@@ -670,6 +707,7 @@ pub fn build(root: &Path, name: &str, opts: &BuildOptions, progress: &mut dyn Fn
             ..Default::default()
         };
         if opts.format != "folder" {
+            check_cancel(cancel)?;
             progress(&Progress { done_bytes: total, total_bytes: total, step: "Making the zip".into() });
             let zip = dest.join(format!("{}.zip", folder.file_name().unwrap_or_default().to_string_lossy()));
             make_zip(&folder, &zip)?;
@@ -868,6 +906,19 @@ mod tests {
         let mut fmt = opts(dest.path(), "tar");
         fmt.allow_problems = true;
         assert!(build(d.path(), "A", &fmt, &mut |_| {}).is_err());
+    }
+
+    #[test]
+    fn stopping_removes_the_half_made_package() {
+        let (d, _o) = project();
+        let dest = tempfile::tempdir().unwrap();
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        // Stop as soon as the copy reports it has started.
+        let err = build_with(d.path(), "S", &opts(dest.path(), "folder"), &mut |_| cancel.store(true, std::sync::atomic::Ordering::SeqCst), &cancel)
+            .unwrap_err();
+        assert!(err.to_string().contains("stopped"), "{err}");
+        assert!(!dest.path().join("S - Delivery").exists());
+        assert!(d.path().join("01 AE Workfile/film_v02.aep").is_file(), "the project is untouched");
     }
 
     #[test]

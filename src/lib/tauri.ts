@@ -110,6 +110,59 @@ export interface WorkfileScan {
   truncated: boolean
 }
 
+export interface VersionDetail {
+  path: string
+  /** The After Effects that saved it, as "27.1". */
+  savedWith: string | null
+  build: number | null
+  beta: boolean
+  platform: string | null
+  /** ISO time written into the file by After Effects. */
+  savedAt: string | null
+  comps: number
+  footage: number
+  /** The version this one was saved from, when it is in the list. */
+  parent: string | null
+  /** False for a file that started as a different document (a template, or another project's file). */
+  sameProject: boolean | null
+  /** Saved by an After Effects newer than any installed here. */
+  tooNew: boolean
+  unreadable: boolean
+}
+
+export interface VersionDetails {
+  versions: VersionDetail[]
+  autoSaves: { path: string; savedAt: string | null; parent: string | null }[]
+  installedMajor: number | null
+}
+
+export interface VersionDiff {
+  compsAdded: string[]
+  compsRemoved: string[]
+  compsChanged: string[]
+  footageAdded: string[]
+  footageRemoved: string[]
+  effectsAdded: string[]
+  fontsAdded: string[]
+  fontsRemoved: string[]
+}
+
+export interface ProjectSummary {
+  comps: number
+  width: number
+  height: number
+  frameRate: number
+  savedWith: string | null
+  beta: boolean
+}
+
+export interface LibraryHit {
+  projectId: string
+  projectName: string
+  kind: "footage" | "font" | "effect"
+  value: string
+}
+
 export interface Task {
   id: string
   title: string
@@ -139,6 +192,18 @@ export interface AssetListing {
   /** Folder that was listed, relative to the project folder; empty for the root. */
   path: string
   entries: AssetEntry[]
+  truncated: boolean
+}
+
+export type StorageKind = "video" | "image" | "audio" | "design" | "project" | "other"
+
+export interface StorageView {
+  total: { bytes: number; files: number }
+  /** Largest first; kinds with no files are left out. */
+  kinds: { kind: StorageKind; bytes: number; files: number }[]
+  /** Every folder in the project with what is inside it, parents before their children. */
+  folders: { path: string; bytes: number; files: number }[]
+  /** Too big to count completely: the numbers are a lower bound. */
   truncated: boolean
 }
 
@@ -373,6 +438,8 @@ export interface NeedsView {
   fontsMethod: "project" | "layers"
   fonts: NeedFont[]
   plugins: NeedPlugin[]
+  /** Read from this saved .aep (project-relative) because the project hasn't been scanned. */
+  fromFile?: string | null
 }
 
 export interface PackageWorkfile {
@@ -505,6 +572,8 @@ export interface FootageView {
   /** Files the Companion copied into the project (newest last). */
   moved: { from: string; to: string; at: string }[]
   skipped: number
+  /** Read from this saved .aep (project-relative) because the project hasn't been scanned. */
+  fromFile?: string | null
 }
 
 export interface CompEntry {
@@ -786,6 +855,8 @@ export const api = {
     }),
   packageCheck: (projectId: string) => invoke<PackageCheck>("package_check", { projectId }),
   packageBuild: (projectId: string, options: PackageOptions) => invoke<PackageReport>("package_build", { projectId, options }),
+  /** Stop a running package before its next file; the half-made package is removed. */
+  packageCancel: () => invoke<void>("package_cancel"),
   getNeeds: (projectId: string) => invoke<NeedsView>("get_needs", { projectId }),
   getFonts: (projectId: string) => invoke<FontsView>("get_fonts", { projectId }),
   getColors: (projectId: string) => invoke<ColorsView>("get_colors", { projectId }),
@@ -803,6 +874,9 @@ export const api = {
   /** `path` is relative to the project folder; empty lists the project root. */
   listAssets: (projectId: string, path: string) => invoke<AssetListing>("list_assets", { projectId, path }),
   openAsset: (projectId: string, path: string) => invoke<void>("open_asset", { projectId, path }),
+  assetStorage: (projectId: string) => invoke<StorageView>("asset_storage", { projectId }),
+  /** JPEG data URL for an image or video anywhere in the project; `null` for audio. */
+  assetThumbnail: (projectId: string, path: string) => invoke<string | null>("asset_thumbnail", { projectId, path }),
   getAeInstalls: () => invoke<AeInstalls>("get_ae_installs"),
   /** Asks After Effects (through the Companion) what is open, before a project is created. */
   checkAfterEffects: () => invoke<AeCheck>("check_after_effects"),
@@ -886,6 +960,15 @@ export const api = {
   setWorkfileNote: (projectId: string, path: string, note: string) =>
     invoke<WorkfileScan>("set_workfile_note", { projectId, path, note }),
   scanWorkfiles: (projectId: string) => invoke<WorkfileScan>("scan_workfiles", { projectId }),
+  /** Read from the .aep files themselves: who saved each version, what it came from, its auto-saves. */
+  workfileVersions: (projectId: string) => invoke<VersionDetails>("workfile_versions", { projectId }),
+  compareWorkfiles: (projectId: string, from: string, to: string) => invoke<VersionDiff>("compare_workfiles", { projectId, from, to }),
+  /** Main format and comp count from the project's main .aep, for its card. */
+  projectSummary: (projectId: string) => invoke<ProjectSummary | null>("project_summary", { projectId }),
+  /** Footage file names, fonts and effects containing the text, across every project's main .aep. */
+  librarySearch: (query: string) => invoke<LibraryHit[]>("library_search", { query }),
+  /** [outside the folder, missing] counts of the files a project uses. */
+  footageProblems: (projectId: string) => invoke<[number, number]>("footage_problems", { projectId }),
   /** `path` is relative to the project folder; `null` clears the current AEP. */
   setCurrentAep: (projectId: string, path: string | null) =>
     invoke<WorkfileScan>("set_current_aep", { projectId, path }),

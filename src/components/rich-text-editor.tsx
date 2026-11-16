@@ -1,4 +1,5 @@
 import { EditorContent, useEditor, useEditorState, type Editor, type JSONContent } from "@tiptap/react"
+import { BubbleMenu } from "@tiptap/react/menus"
 import { Placeholder } from "@tiptap/extensions"
 import StarterKit from "@tiptap/starter-kit"
 import {
@@ -62,15 +63,54 @@ export function RichTextEditor({ content, onChange, onContentError, disabled, pl
   return (
     // A dotted desk with a sheet of paper; the formatting bar is the top edge of the sheet and sticks while scrolling.
     <div className={cn("dot-bg flex flex-col overflow-y-auto px-4", className)}>
-      <div className="mx-auto my-4 flex min-h-[32rem] w-full max-w-3xl shrink-0 grow flex-col rounded-md border bg-card">
+      <div className="mx-auto my-4 flex min-h-[32rem] w-full max-w-3xl shrink-0 grow flex-col rounded-xl border bg-card">
         {editor && (
-          <div className="sticky top-0 z-10 rounded-t-md border-b bg-card">
+          <div className="sticky top-0 z-10 rounded-t-xl border-b bg-card">
             <Toolbar editor={editor} disabled={disabled} />
           </div>
         )}
+        {editor && <SelectionBar editor={editor} />}
         <EditorContent editor={editor} className="flex flex-1 flex-col px-6 py-8 sm:px-12 sm:py-10 [&_.tiptap]:flex-1" />
       </div>
     </div>
+  )
+}
+
+/** The few things you reach for with text selected, right above the selection. Hidden while the note is read-only. */
+function SelectionBar({ editor }: { editor: Editor }) {
+  const s = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      bold: e.isActive("bold"),
+      italic: e.isActive("italic"),
+      underline: e.isActive("underline"),
+      strike: e.isActive("strike"),
+      code: e.isActive("code"),
+      h2: e.isActive("heading", { level: 2 }),
+      quote: e.isActive("blockquote"),
+    }),
+  })
+  const chain = () => editor.chain().focus()
+  const item = (label: string, Icon: LucideIcon, pressed: boolean, run: () => void) => (
+    <Toggle key={label} size="sm" aria-label={label} title={label} pressed={pressed} onPressedChange={run}>
+      <Icon />
+    </Toggle>
+  )
+  return (
+    <BubbleMenu
+      editor={editor}
+      options={{ placement: "top", offset: 8 }}
+      className="z-40 flex items-center gap-0.5 rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg shadow-black/10"
+    >
+      {item("Bold", Bold, s.bold, () => chain().toggleBold().run())}
+      {item("Italic", Italic, s.italic, () => chain().toggleItalic().run())}
+      {item("Underline", UnderlineIcon, s.underline, () => chain().toggleUnderline().run())}
+      {item("Strikethrough", Strikethrough, s.strike, () => chain().toggleStrike().run())}
+      {item("Inline code", Code, s.code, () => chain().toggleCode().run())}
+      <Separator orientation="vertical" className="mx-1 data-vertical:h-5" />
+      {item("Heading", Heading2, s.h2, () => chain().toggleHeading({ level: 2 }).run())}
+      {item("Quote", Quote, s.quote, () => chain().toggleBlockquote().run())}
+    </BubbleMenu>
   )
 }
 

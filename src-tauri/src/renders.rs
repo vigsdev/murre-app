@@ -270,6 +270,14 @@ fn resolve_media(root: &Path, rel: &str) -> AppResult<(String, PathBuf, MediaKin
     if parts.iter().any(|p| p.starts_with('.')) {
         return invalid("That file is not a render.");
     }
+    resolve_media_file(root, rel)
+}
+
+/// A video, image or audio file anywhere in the project, outside hidden folders such as `.murre`.
+fn resolve_media_file(root: &Path, rel: &str) -> AppResult<(String, PathBuf, MediaKind)> {
+    if safe_components(rel)?.iter().any(|p| p.starts_with('.')) {
+        return invalid("That file is not part of the project.");
+    }
     let (canon_root, lexical, parts) = resolve_inside(root, rel)?;
     let meta = fs::symlink_metadata(&lexical).map_err(|e| AppError::io(&lexical, e))?;
     if !meta.file_type().is_file() {
@@ -612,6 +620,17 @@ fn run_ffmpeg_thumb(ffmpeg: &Path, abs: &Path, out: &Path, seek: bool) -> bool {
 /// A 320px-wide JPEG data URL, or `None` for audio (no picture to show).
 pub fn thumbnail(root: &Path, cache_dir: &Path, rel: &str) -> AppResult<Option<String>> {
     let (_, abs, kind) = resolve_media(root, rel)?;
+    make_thumbnail(cache_dir, &abs, kind)
+}
+
+/// The same thumbnail for a video or image anywhere in the project (the Assets tab), not only in the render folders.
+pub fn asset_thumbnail(root: &Path, cache_dir: &Path, rel: &str) -> AppResult<Option<String>> {
+    let (_, abs, kind) = resolve_media_file(root, rel)?;
+    make_thumbnail(cache_dir, &abs, kind)
+}
+
+fn make_thumbnail(cache_dir: &Path, abs: &Path, kind: MediaKind) -> AppResult<Option<String>> {
+    let abs = abs.to_path_buf();
     if kind == MediaKind::Audio {
         return Ok(None);
     }

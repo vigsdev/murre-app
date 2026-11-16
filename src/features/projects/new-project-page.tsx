@@ -136,7 +136,7 @@ export function NewProjectPage() {
           // The open project was asked about just above.
           announceStarter(await starter.run(created.id, install.path, true), baseName)
         } catch (err) {
-          toast.error(`Project made! After Effects couldn’t create the workfile, though: ${errorMessage(err)}`)
+          toast.error(`The project folder is ready, but After Effects couldn’t create the workfile: ${errorMessage(err)}`)
         }
       }
       navigate(`/projects/${created.id}`)

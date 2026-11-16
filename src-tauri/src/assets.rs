@@ -266,6 +266,125 @@ pub fn open_file(root: &Path, rel: &str) -> AppResult<()> {
     }
 }
 
+/// The most files and folders a storage count looks at, so a huge or looping folder can't stall the app.
+const STORAGE_MAX_ENTRIES: usize = 300_000;
+const STORAGE_MAX_FOLDERS: usize = 5000;
+const STORAGE_MAX_DEPTH: usize = 32;
+
+/// What kind of file this is, for the storage overview.
+pub fn storage_kind(ext: Option<&str>) -> &'static str {
+    match ext.unwrap_or("") {
+        "mov" | "mp4" | "m4v" | "mxf" | "avi" | "webm" | "mkv" | "r3d" | "braw" | "mts" => "video",
+        "png" | "jpg" | "jpeg" | "tif" | "tiff" | "webp" | "gif" | "exr" | "dpx" | "bmp" | "heic" | "tga" => "image",
+        "wav" | "mp3" | "aif" | "aiff" | "m4a" | "aac" | "flac" | "ogg" => "audio",
+        "psd" | "psb" | "ai" | "eps" | "svg" | "indd" => "design",
+        "aep" | "aepx" | "aet" | "prproj" | "mogrt" | "c4d" | "blend" => "project",
+        _ => "other",
+    }
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Totals {
+    pub bytes: u64,
+    pub files: u64,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KindTotal {
+    /// `video`, `image`, `audio`, `design`, `project` or `other`.
+    pub kind: &'static str,
+    pub bytes: u64,
+    pub files: u64,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderTotal {
+    /// Project-relative, `/`-separated.
+    pub path: String,
+    pub bytes: u64,
+    /// Files anywhere inside it.
+    pub files: u64,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageView {
+    pub total: Totals,
+    /// Largest first; kinds with no files are left out.
+    pub kinds: Vec<KindTotal>,
+    /// Every folder in the project with what is inside it, in name order (parents before their children).
+    pub folders: Vec<FolderTotal>,
+    /// The project was too big to count completely; the numbers are a lower bound.
+    pub truncated: bool,
+}
+
+/// How much space the project's files take, by kind and by folder. Hidden files and folders (`.murre`, `.DS_Store`)
+/// are left out, and shortcuts are not followed. Read-only.
+pub fn storage(root: &Path) -> AppResult<StorageView> {
+    let (canon_root, _, _) = resolve_inside(root, "")?;
+    let mut kinds: std::collections::HashMap<&'static str, (u64, u64)> = std::collections::HashMap::new();
+    let mut folders: std::collections::BTreeMap<String, (u64, u64)> = std::collections::BTreeMap::new();
+    let mut total = Totals { bytes: 0, files: 0 };
+    let mut seen = 0usize;
+    let mut truncated = false;
+    // (absolute folder, its project-relative path, depth)
+    let mut stack = vec![(canon_root.clone(), String::new(), 0usize)];
+    'walk: while let Some((dir, rel, depth)) = stack.pop() {
+        let Ok(read) = fs::read_dir(&dir) else { continue };
+        for item in read.flatten() {
+            seen += 1;
+            if seen > STORAGE_MAX_ENTRIES {
+                truncated = true;
+                break 'walk;
+            }
+            let name = item.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let Ok(meta) = fs::symlink_metadata(item.path()) else { continue };
+            let child = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+            if meta.is_dir() {
+                if folders.len() >= STORAGE_MAX_FOLDERS || depth + 1 > STORAGE_MAX_DEPTH {
+                    truncated = true;
+                    continue;
+                }
+                folders.entry(child.clone()).or_insert((0, 0));
+                stack.push((item.path(), child, depth + 1));
+            } else if meta.is_file() {
+                let bytes = meta.len();
+                total.bytes += bytes;
+                total.files += 1;
+                let k = kinds.entry(storage_kind(extension_of(&name).as_deref())).or_insert((0, 0));
+                k.0 += bytes;
+                k.1 += 1;
+                // Count it in every folder above it.
+                let mut at = rel.as_str();
+                while !at.is_empty() {
+                    if let Some(f) = folders.get_mut(at) {
+                        f.0 += bytes;
+                        f.1 += 1;
+                    }
+                    at = at.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+                }
+            }
+        }
+    }
+    let mut kinds: Vec<KindTotal> = kinds.into_iter().map(|(kind, (bytes, files))| KindTotal { kind, bytes, files }).collect();
+    kinds.sort_by(|a, b| b.bytes.cmp(&a.bytes).then(a.kind.cmp(b.kind)));
+    let mut folders: Vec<FolderTotal> = folders.into_iter().map(|(path, (bytes, files))| FolderTotal { path, bytes, files }).collect();
+    folders.sort_by(|a, b| {
+        let (ap, bp) = (a.path.split('/'), b.path.split('/'));
+        ap.zip(bp)
+            .map(|(x, y)| natural_cmp(x, y))
+            .find(|o| *o != Ordering::Equal)
+            .unwrap_or_else(|| a.path.matches('/').count().cmp(&b.path.matches('/').count()))
+    });
+    Ok(StorageView { total, kinds, folders, truncated })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +537,26 @@ mod tests {
         assert_eq!(is_blocked(Some("lnk")), cfg!(windows));
         assert_eq!(is_blocked(Some("js")), cfg!(windows));
         assert!(!is_blocked(Some("mov")) && !is_blocked(Some("aep")) && !is_blocked(Some("jsx")));
+    }
+
+    #[test]
+    fn storage_counts_by_kind_and_folder() {
+        let d = project();
+        let r = d.path();
+        fs::write(r.join("02 Assets/01 Images/b.jpg"), vec![0u8; 100]).unwrap();
+        fs::write(r.join("01 AE Workfile/Film.aep"), vec![0u8; 50]).unwrap();
+        fs::write(r.join(".murre/notes.json"), vec![0u8; 999]).unwrap();
+        let v = storage(r).unwrap();
+        // Hero.PNG (3) + b.jpg (100) are images; readme.txt (5) and run.command (9) are other; .DS_Store and .murre are skipped.
+        assert_eq!(v.total, Totals { bytes: 3 + 100 + 50 + 5 + 9, files: 5 });
+        assert_eq!(v.kinds[0], KindTotal { kind: "image", bytes: 103, files: 2 });
+        let f = |p: &str| v.folders.iter().find(|f| f.path == p).cloned().unwrap();
+        assert_eq!((f("02 Assets").bytes, f("02 Assets").files), (103, 2));
+        assert_eq!((f("02 Assets/01 Images").bytes, f("02 Assets/01 Images").files), (103, 2));
+        assert_eq!(f("02 Assets/2 Early").files, 0);
+        assert!(!v.folders.iter().any(|f| f.path.starts_with(".murre")));
+        let order: Vec<_> = v.folders.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(order, ["01 AE Workfile", "02 Assets", "02 Assets/01 Images", "02 Assets/2 Early", "02 Assets/10 Late"]);
+        assert!(!v.truncated);
     }
 }

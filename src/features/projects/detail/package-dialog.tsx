@@ -45,6 +45,7 @@ export function PackageDialog({ projectId, projectName, open, onOpenChange }: { 
   const [anyway, setAnyway] = useState(false)
   const [dest, setDest] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [progress, setProgress] = useState<PackageProgress | null>(null)
   const [report, setReport] = useState<PackageReport | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -116,6 +117,7 @@ export function PackageDialog({ projectId, projectName, open, onOpenChange }: { 
       setError(errorMessage(e))
     } finally {
       setRunning(false)
+      setStopping(false)
     }
   }
 
@@ -183,7 +185,7 @@ export function PackageDialog({ projectId, projectName, open, onOpenChange }: { 
             {check.workfile && (
               <>
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Make a</p>
+                  <p className="text-xs text-muted-foreground">Make a</p>
                   <div className="flex gap-2" role="radiogroup" aria-label="Package format">
                     {(
                       [
@@ -288,9 +290,15 @@ export function PackageDialog({ projectId, projectName, open, onOpenChange }: { 
             </>
           ) : (
             <>
-              <Button variant="outline" disabled={running} onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
+              {running ? (
+                <Button variant="outline" disabled={stopping} onClick={() => (setStopping(true), void api.packageCancel().catch(() => {}))}>
+                  {stopping ? "Stopping…" : "Stop"}
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+              )}
               <Button disabled={!canRun} onClick={() => void run()}>
                 {running ? "Packing…" : `Make package${size ? ` (${formatBytes(size)})` : ""}`}
               </Button>

@@ -1,4 +1,4 @@
-import { Calendar, CornerDownLeft, FileText, FolderKanban, Home, PanelLeft, PenTool, Plus, Settings, X, type LucideIcon } from "lucide-react"
+import { Calendar, CornerDownLeft, FileText, FileVideo, FolderKanban, Home, PanelLeft, PenTool, Plus, Settings, Sparkles, Type, X, type LucideIcon } from "lucide-react"
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useNavigate } from "react-router"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -7,14 +7,14 @@ import { STATUS_OPTIONS, STATUS_TONE } from "@/features/projects/constants"
 import { SPACE_ICONS } from "@/features/spaces/space-icons"
 import { useSpaces } from "@/features/spaces/spaces-context"
 import { useTabs } from "@/features/tabs/tabs-context"
-import { api, type ProjectRecord } from "@/lib/tauri"
+import { api, type LibraryHit, type ProjectRecord } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import { rank, type Searchable } from "./match"
 import { modKey } from "@/lib/platform"
 
 type Entry = Searchable & {
   id: string
-  group: "Recent" | "Pages" | "Projects" | "Spaces" | "Actions"
+  group: "Recent" | "Pages" | "Projects" | "Spaces" | "Actions" | "In project files"
   lead: ReactNode
   /** Opens a page: the entry's route. Actions have `run` instead. */
   path?: string
@@ -30,6 +30,12 @@ const PAGES: { label: string; path: string; icon: LucideIcon }[] = [
   { label: "Settings", path: "/settings", icon: Settings },
 ]
 
+const FILE_KIND: Record<LibraryHit["kind"], { label: string; icon: LucideIcon }> = {
+  footage: { label: "Footage", icon: FileVideo },
+  font: { label: "Font", icon: Type },
+  effect: { label: "Effect", icon: Sparkles },
+}
+
 const STATUS_LABEL = new Map(STATUS_OPTIONS.map((o) => [o.value, o.label]))
 const ICON = "size-4 shrink-0 text-muted-foreground"
 
@@ -39,7 +45,7 @@ function Highlighted({ text, indices }: { text: string; indices: number[] }) {
   return (
     <>
       {Array.from(text).map((ch, i) => (
-        <span key={i} className={hit.has(i) ? "font-semibold" : undefined}>
+        <span key={i} className={hit.has(i) ? "font-medium text-foreground" : undefined}>
           {ch}
         </span>
       ))}
@@ -59,6 +65,20 @@ export function Switcher() {
   const { activeId, openNew, close } = useTabs()
   const { toggleSidebar } = useSidebar()
   const listRef = useRef<HTMLDivElement>(null)
+  // Footage, fonts and effects found in every project's saved .aep, for three letters or more.
+  const [fileHits, setFileHits] = useState<LibraryHit[]>([])
+  useEffect(() => {
+    const q = query.trim()
+    if (!open || q.length < 3) return setFileHits([])
+    let cancelled = false
+    const t = window.setTimeout(() => {
+      api.librarySearch(q).then((h) => !cancelled && setFileHits(h), () => !cancelled && setFileHits([]))
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(t)
+    }
+  }, [query, open])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -115,8 +135,23 @@ export function Switcher() {
   const results = useMemo(() => {
     const ranked = rank(query, entries, 40)
     // With a query the best matches lead whatever group they are in; without one the groups keep their order.
-    return ranked
-  }, [query, entries])
+    // Matches inside project files come after, as plain text matches.
+    const files = fileHits.map((h) => ({
+      item: {
+        id: `file:${h.projectId}:${h.kind}:${h.value}`,
+        group: "In project files" as const,
+        label: h.value,
+        hint: `${FILE_KIND[h.kind].label} in ${h.projectName}`,
+        path: `/projects/${h.projectId}`,
+        lead: (() => {
+          const Icon = FILE_KIND[h.kind].icon
+          return <Icon aria-hidden className={ICON} />
+        })(),
+      },
+      indices: [] as number[],
+    }))
+    return [...ranked, ...files]
+  }, [query, entries, fileHits])
 
   useEffect(() => setActive(0), [query])
   useEffect(() => {
@@ -152,7 +187,7 @@ export function Switcher() {
         showCloseButton={false}
         // The app behind stays sharp: a faint dim, no blur. The panel itself is the frosted part.
         overlayClassName="bg-black/10 supports-backdrop-filter:backdrop-blur-none"
-        className="top-[18%] -translate-y-0 gap-0 overflow-hidden bg-popover/75 p-0 shadow-2xl ring-1 ring-foreground/10 backdrop-blur-2xl backdrop-saturate-150 sm:max-w-xl"
+        className="top-[18%] -translate-y-0 gap-0 overflow-hidden bg-popover p-0 shadow-lg ring-1 ring-foreground/10 sm:max-w-xl"
       >
         <DialogTitle className="sr-only">Jump to</DialogTitle>
         <input
@@ -164,13 +199,13 @@ export function Switcher() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onInputKey}
-          placeholder="Jump to a project, space or page"
+          placeholder="Jump to a project, page, footage file or font"
           className="h-12 w-full border-b bg-transparent px-4 text-sm outline-none placeholder:text-muted-foreground"
         />
         <div ref={listRef} id="switcher-list" role="listbox" className="max-h-80 overflow-y-auto p-1.5">
           {results.length === 0 && <p className="px-3 py-8 text-center text-sm text-muted-foreground">Nothing matches that.</p>}
           {results.map(({ item, indices }, i) => {
-            const heading = !query.trim() && item.group !== lastGroup ? item.group : null
+            const heading = (!query.trim() || item.group === "In project files") && item.group !== lastGroup ? item.group : null
             lastGroup = item.group
             return (
               <div key={item.id}>

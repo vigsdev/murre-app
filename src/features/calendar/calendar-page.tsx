@@ -238,7 +238,7 @@ export function CalendarPage() {
                         {chip.status && <span aria-hidden className={cn("size-2 shrink-0 rounded-full", STATUS_TONE[chip.status].dot)} />}
                         <span className="min-w-0 flex-1 truncate">{chip.label}</span>
                         {chip.priority && (
-                          <span aria-hidden className="shrink-0 font-semibold tracking-tighter opacity-60">
+                          <span aria-hidden className="shrink-0 font-medium opacity-60">
                             {PRIORITY_MARK[chip.priority]}
                           </span>
                         )}

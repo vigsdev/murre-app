@@ -53,7 +53,7 @@ export function PageHeader({
             <h1 className="min-w-0 flex-1">{titleNode}</h1>
           ) : (
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 title={title} className={cn("min-w-0 truncate", hero ? "text-3xl font-semibold tracking-tight" : "text-sm font-medium", titleClassName)}>
+            <h1 title={title} className={cn("min-w-0 truncate", hero ? "text-3xl font-medium tracking-tight" : "text-sm font-medium", titleClassName)}>
               {title}
             </h1>
             {hero && subtitle && <p className="truncate text-sm text-muted-foreground">{subtitle}</p>}

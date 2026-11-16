@@ -43,7 +43,7 @@ export function EditableTitle({ name, onSave }: { name: string; onSave: (name: s
     setEditing(false)
   }
 
-  const box = "-mx-2 h-10 max-w-full rounded-lg px-2 text-3xl font-semibold tracking-tight"
+  const box = "-mx-2 h-10 max-w-full rounded-lg px-2 text-3xl font-medium tracking-tight"
   if (editing) {
     return (
       <input

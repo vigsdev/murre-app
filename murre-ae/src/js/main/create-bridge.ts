@@ -64,9 +64,12 @@ export function createBridge(given: ConstructorParameters<typeof BridgeClient>[1
   return { client, why: "" };
 }
 
-/** Node's environment variables. `process` is a global in CEP's mixed context; `cep_node` is where CEP also puts it. */
+/**
+ * Node's environment variables (Windows needs `APPDATA` to find the app). Read through `cep_node`, where CEP puts
+ * Node's own `process`: the build replaces a written `process.env` with an empty object, which broke the link on
+ * Windows (the Mac path doesn't need the environment).
+ */
 function nodeEnv(): Record<string, string | undefined> {
-  if (typeof process !== "undefined" && process.env) return process.env;
   const p = (window as unknown as { cep_node?: { process?: { env?: Record<string, string | undefined> } } }).cep_node?.process;
   return p?.env ?? {};
 }

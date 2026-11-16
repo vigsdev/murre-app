@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { FolderSetupEditor } from "@/features/settings/folder-setup"
 import { CompanionInstallCard, useCompanionInstall } from "@/features/companion/companion-install"
 import { CalendarSyncRows, useCalendarSync } from "@/features/settings/calendar-sync"
-import { isMac } from "@/lib/platform"
+import { isMac, thisComputer } from "@/lib/platform"
 import { useUpdateProgress } from "@/features/updates/use-update-progress"
 import { useProfile, useProfileContext } from "@/features/profile/profile-context"
 import { prepareAvatar } from "@/lib/image"
@@ -25,7 +25,7 @@ import { api, errorMessage, type AerenderStatus, type AppInfo } from "@/lib/taur
 
 const MAX_NAME = 60
 const THEMES = [
-  { value: "system", label: "Match my Mac" },
+  { value: "system", label: isMac ? "Match my Mac" : "Match Windows" },
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
 ]
@@ -36,7 +36,7 @@ function Section({ id, title, description, children }: { id: string; title: stri
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="flex scroll-mt-8 flex-col gap-3">
       <div>
-        <h2 id={`${id}-title`} className="text-sm font-semibold">
+        <h2 id={`${id}-title`} className="text-sm font-medium">
           {title}
         </h2>
         {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
@@ -118,7 +118,7 @@ function ProfileSection() {
   }
 
   return (
-    <Section id="profile" title="Profile" description="Shown in the sidebar. It stays on your Mac.">
+    <Section id="profile" title="Profile" description={`Shown in the sidebar. It stays on ${thisComputer}.`}>
       <form onSubmit={onSubmit} className="divide-y">
         <Row title="Photo" description="Click the picture to choose a new one.">
           <button
@@ -185,7 +185,7 @@ function AppearanceSection() {
   const [translucent, setTranslucent] = useTranslucent()
   return (
     <Section id="appearance" title="Appearance">
-      <Row title="Theme" htmlFor="theme" description="Match your Mac, or always light or dark.">
+      <Row title="Theme" htmlFor="theme" description={`Match ${isMac ? "your Mac" : "Windows"}, or always light or dark.`}>
         <Select items={THEMES} value={theme ?? "system"} onValueChange={(v) => v && setTheme(v)}>
           <SelectTrigger id="theme" className="w-44">
             <SelectValue />
@@ -220,13 +220,16 @@ function AppearanceSection() {
           ))}
         </div>
       </Row>
-      <Row
-        title="Translucent sidebar"
-        htmlFor="translucent"
-        description="Lets the Mac’s blur show through the sidebar and the window edge. Turn it off for a solid window."
-      >
-        <Checkbox id="translucent" checked={translucent} onCheckedChange={(v) => setTranslucent(v === true)} />
-      </Row>
+      {/* Only the Mac has a blur behind the window to show. */}
+      {isMac && (
+        <Row
+          title="Translucent sidebar"
+          htmlFor="translucent"
+          description="Lets the Mac’s blur show through the sidebar and the window edge. Turn it off for a solid window."
+        >
+          <Checkbox id="translucent" checked={translucent} onCheckedChange={(v) => setTranslucent(v === true)} />
+        </Row>
+      )}
       <Row
         title="Show font previews"
         htmlFor="font-previews"

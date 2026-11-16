@@ -1,3 +1,4 @@
+import { modKey } from "@/lib/platform"
 import { Calendar, ChevronLeft, ChevronRight, FileText, FolderKanban, Home, PenTool, Plus, Settings, X, type LucideIcon } from "lucide-react"
 import { motion } from "motion/react"
 import { useEffect, useRef, useState } from "react"
@@ -157,7 +158,7 @@ export function TabStrip() {
         <button
           type="button"
           aria-label="New tab"
-          title="New tab"
+          title={`New tab (${modKey}T)`}
           onClick={() => openNew("/")}
           className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
         >

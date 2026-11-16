@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router"
 import { useProjectsChanged } from "@/features/sync/sync-context"
 import { useSpaces } from "@/features/spaces/spaces-context"
 import { api, type ProjectRecord } from "@/lib/tauri"
+import { isMac } from "@/lib/platform"
 import {
   activate,
   closeTab,
@@ -158,6 +159,31 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("auxclick", handle, true)
     }
   }, [openNew])
+
+  // Keyboard: ⌘T (Ctrl+T) opens a new tab, Ctrl+Tab and Ctrl+Shift+Tab move between tabs, ⌘1–⌘8 pick a tab and ⌘9 the
+  // last one, as in a browser.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
+      const { tabs, activeId } = stateRef.current
+      const at = tabs.findIndex((t) => t.id === activeId)
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
+        e.preventDefault()
+        if (tabs.length > 1) select(tabs[(at + (e.shiftKey ? tabs.length - 1 : 1)) % tabs.length].id)
+      } else if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "t") {
+        e.preventDefault()
+        openNew()
+      } else if (mod && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+        const n = Number(e.key)
+        const tab = n === 9 ? tabs[tabs.length - 1] : tabs[n - 1]
+        if (!tab) return
+        e.preventDefault()
+        if (tab.id !== activeId) select(tab.id)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [select, openNew])
 
   const { canBack, canForward } = useHistoryReach()
   const spaceNames = useMemo(() => new Map(spaces.map((s) => [s.id, s.name])), [spaces])

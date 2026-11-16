@@ -132,7 +132,9 @@ fn commit(root: &Path, mut file: NotesFile) -> AppResult<NotesView> {
     Ok(NotesView::from(&file))
 }
 
-/// Save the first page if the stored revision is still `expected_revision`.
+/// Save the first page if the stored revision is still `expected_revision`. The app saves through `save_page`; this
+/// shorthand is kept for the tests.
+#[cfg(test)]
 pub fn save(root: &Path, content: Value, expected_revision: u64) -> AppResult<NotesView> {
     save_page(root, None, content, expected_revision)
 }

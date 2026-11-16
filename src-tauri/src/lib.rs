@@ -31,6 +31,7 @@ mod applog;
 mod premiere;
 mod versions;
 mod ae_project;
+mod aep_file;
 mod companion_install;
 mod render_job;
 mod link_preview;
@@ -516,6 +517,93 @@ async fn scan_workfiles(
         project_store::available_root(&conn, &project_id)?
     };
     workfiles::scan(&root)
+}
+
+/// What each version's `.aep` says about itself: the After Effects that saved it, which version it was saved from,
+/// whether it belongs to this project, and the auto-saves made from it. Read-only, from the files.
+#[tauri::command]
+async fn workfile_versions(state: State<'_, AppState>, project_id: String) -> AppResult<aep_file::VersionDetails> {
+    let root = project_root(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let scan = workfiles::scan(&root)?;
+        let rels: Vec<String> = scan.workfiles.iter().map(|w| w.path.clone()).collect();
+        let current = scan.current_aep.as_ref().filter(|c| c.exists).map(|c| c.path.clone());
+        Ok(aep_file::version_details(&root, &rels, current.as_deref(), environment::newest_installed_major()))
+    })
+    .await
+    .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+/// What changed from the `.aep` at `from` to the one at `to` (both project-relative). Read-only.
+#[tauri::command]
+async fn compare_workfiles(state: State<'_, AppState>, project_id: String, from: String, to: String) -> AppResult<aep_file::VersionDiff> {
+    let root = project_root(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let old = aep_file::read(&open_ae::aep_target(&root, &from)?)?;
+        let new = aep_file::read(&open_ae::aep_target(&root, &to)?)?;
+        Ok(aep_file::compare(&old, &new))
+    })
+    .await
+    .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+/// The project's main format and comp count, from its main `.aep` (for the project card). `None` when there's no
+/// readable project file.
+#[tauri::command]
+async fn project_summary(state: State<'_, AppState>, project_id: String) -> AppResult<Option<aep_file::ProjectSummary>> {
+    let root = project_root(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some((_, info)) = aep_file::project_aep(&root) else { return Ok(None) };
+        let main: Vec<i64> = comps::get(&root).map(|v| v.comps.iter().filter(|c| c.main).map(|c| c.id).collect()).unwrap_or_default();
+        Ok(aep_file::summary(&info, &main))
+    })
+    .await
+    .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+/// Footage file names, fonts and effects containing `query`, across every project's main `.aep` (read-only).
+#[tauri::command]
+async fn library_search(state: State<'_, AppState>, query: String) -> AppResult<Vec<aep_file::LibraryHit>> {
+    let q = query.trim().to_string();
+    if q.chars().count() < 3 {
+        return Ok(Vec::new());
+    }
+    let projects = {
+        let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
+        project_store::list(&conn)?
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut hits = Vec::new();
+        for p in projects.iter().filter(|p| p.available) {
+            if let Some((_, info)) = aep_file::project_aep(std::path::Path::new(&p.path)) {
+                aep_file::search(&info, &q, &p.project.id, &p.project.name, &mut hits);
+            }
+            if hits.len() >= 60 {
+                break;
+            }
+        }
+        hits.truncate(60);
+        Ok(hits)
+    })
+    .await
+    .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+/// How many files the project uses sit outside its folder, and how many are missing: from the last scan, else from
+/// the saved `.aep`. Asked before archiving, since archiving the folder leaves those behind.
+#[tauri::command]
+async fn footage_problems(state: State<'_, AppState>, project_id: String) -> AppResult<(usize, usize)> {
+    let root = project_root(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut view = footage::get(&root)?;
+        if view.last_scan_at.is_none() && view.assets.is_empty() {
+            view = footage::from_file(&root).unwrap_or(view);
+        }
+        let count = |s: &str| view.assets.iter().filter(|a| a.status == s).count();
+        Ok((count("outside"), count("missing")))
+    })
+    .await
+    .map_err(|e| AppError::Invalid(e.to_string()))?
 }
 
 /// `path` is relative to the project folder; `null` clears the current AEP.
@@ -1440,6 +1528,12 @@ async fn package_check(state: State<'_, AppState>, project_id: String) -> AppRes
         .map_err(|e| crate::error::AppError::Invalid(e.to_string()))?
 }
 
+/// Stop a running package before its next file. The half-made package is removed.
+#[tauri::command]
+fn package_cancel() {
+    package::request_cancel();
+}
+
 /// Make the delivery package. Progress is sent as `package-progress` events.
 #[tauri::command]
 async fn package_build(
@@ -1601,6 +1695,38 @@ async fn probe_render(
 ) -> AppResult<renders::MediaInfo> {
     let root = project_root(&state, &project_id)?;
     renders::probe(&root, &path)
+}
+
+/// What an `.aep` inside the project holds, read straight from the file (read-only): the version that saved it, its
+/// family ids, comps, footage, effects and fonts.
+#[tauri::command]
+async fn read_aep(state: State<'_, AppState>, project_id: String, path: String) -> AppResult<aep_file::AepInfo> {
+    let root = project_root(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = open_ae::aep_target(&root, &path)?;
+        aep_file::read(&target).map(|i| (*i).clone())
+    })
+    .await
+    .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+/// How much space the project's files take, by kind and by folder (the Assets tab's overview and folder list).
+#[tauri::command]
+async fn asset_storage(state: State<'_, AppState>, project_id: String) -> AppResult<assets::StorageView> {
+    let root = project_root(&state, &project_id)?;
+    tauri::async_runtime::spawn_blocking(move || assets::storage(&root))
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?
+}
+
+/// A thumbnail for a video or image anywhere in the project: JPEG data URL, or `null` for audio files.
+#[tauri::command]
+async fn asset_thumbnail(state: State<'_, AppState>, project_id: String, path: String) -> AppResult<Option<String>> {
+    let root = project_root(&state, &project_id)?;
+    let cache = state.paths.root.join("thumbnails");
+    tauri::async_runtime::spawn_blocking(move || renders::asset_thumbnail(&root, &cache, &path))
+        .await
+        .map_err(|e| AppError::Invalid(e.to_string()))?
 }
 
 /// JPEG data URL, or `null` for audio files.
@@ -1874,7 +2000,12 @@ async fn get_comps(state: State<'_, AppState>, project_id: String) -> AppResult<
 #[tauri::command]
 async fn get_footage(state: State<'_, AppState>, project_id: String) -> AppResult<footage::FootageView> {
     let root = project_root(&state, &project_id)?;
-    footage::get(&root)
+    let view = footage::get(&root)?;
+    if view.last_scan_at.is_some() || !view.assets.is_empty() {
+        return Ok(view);
+    }
+    // Not scanned yet: read the saved project file instead.
+    Ok(tauri::async_runtime::spawn_blocking(move || footage::from_file(&root)).await.ok().flatten().unwrap_or(view))
 }
 
 fn aerender_status_now(state: &AppState) -> AppResult<aerender::Status> {
@@ -2214,6 +2345,7 @@ pub fn run() {
             get_fonts,
             package_check,
             package_build,
+            package_cancel,
             get_needs,
             reconcile_projects,
             relink_project,
@@ -2257,6 +2389,14 @@ pub fn run() {
             set_render_approved,
             probe_render,
             render_thumbnail,
+            asset_storage,
+            read_aep,
+            workfile_versions,
+            compare_workfiles,
+            project_summary,
+            library_search,
+            footage_problems,
+            asset_thumbnail,
             render_playback_path,
             get_references,
             save_references,

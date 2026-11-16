@@ -102,14 +102,7 @@ function nameHash(name: string): number {
 }
 
 /** Same name, same colours: a stable two-stop gradient used when a project has no render to show. */
-export function projectGradient(name: string): string {
-  const h = nameHash(name)
-  const hue = h % 360
-  const hue2 = (hue + 40 + ((h >>> 9) % 50)) % 360
-  return `linear-gradient(135deg, oklch(0.78 0.14 ${hue}), oklch(0.62 0.17 ${hue2}))`
-}
-
-/** The project's own colour: the first hue of its cover gradient, so a project looks the same everywhere it appears. */
+/** The project's own colour, from its name, so a project looks the same everywhere it appears (cover tile, timeline). */
 export function projectColor(name: string): string {
   return `oklch(0.72 0.13 ${nameHash(name) % 360})`
 }

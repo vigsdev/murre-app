@@ -14,6 +14,7 @@ import type { ProjectRecord } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import { openProjectInAfterEffects } from "./open-in-ae"
 import { ProjectCover } from "./project-cover"
+import { ProjectFormat } from "./project-format"
 import { formatDeadline, isOverdue, priorityLabel, statusLabel, timeAgo } from "./project-utils"
 import { showInFileBrowser } from "@/lib/platform"
 
@@ -98,7 +99,7 @@ export function ProjectCard({ project: p, onEdit, onArchive, onUnarchive, onRemo
       </ProjectCover>
 
       <div className="flex min-w-0 flex-col gap-1 p-3">
-        <h3 className="truncate text-sm font-semibold">
+        <h3 className="truncate text-sm font-medium">
           {/* Stretched link: the whole card opens the project; the actions menu sits above it. */}
           <Link to={`/projects/${p.id}`} className="outline-none after:absolute after:inset-0">
             {p.name}
@@ -107,6 +108,7 @@ export function ProjectCard({ project: p, onEdit, onArchive, onUnarchive, onRemo
         <p className="truncate text-xs text-muted-foreground">
           {[p.client || "No client", spaceName].filter(Boolean).join(" · ")}
         </p>
+        <ProjectFormat projectId={p.id} available={p.available} />
         {/* Hovering (or focusing) the card unfolds the description. */}
         {p.description && (
           <div className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 group-focus-within/card:grid-rows-[1fr] group-hover/card:grid-rows-[1fr]">

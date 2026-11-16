@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { api, type NeedsView } from "@/lib/tauri"
-import { thisComputer } from "@/lib/platform"
+import { baseName, thisComputer } from "@/lib/platform"
 
 /** "25.0x1" → "25", for a line people can read. */
 function aeMajor(v: string) {
@@ -13,7 +13,7 @@ function aeMajor(v: string) {
 function Row({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</p>
+      <p className="text-xs text-muted-foreground">{title}</p>
       {children}
     </div>
   )
@@ -41,7 +41,7 @@ export function NeedsCard({ projectId, reloadToken = 0 }: { projectId: string; r
 
   if (failed || !view) return null
 
-  if (!view.scanned) {
+  if (!view.scanned && !view.fromFile) {
     return (
       <Card data-testid="needs-card">
         <CardHeader>
@@ -65,15 +65,17 @@ export function NeedsCard({ projectId, reloadToken = 0 }: { projectId: string; r
       <CardHeader>
         <CardTitle>What this project needs</CardTitle>
         <CardDescription>
-          {problems === 0
-            ? `Everything the last scan found looks available on ${thisComputer}.`
-            : `${problems} ${problems === 1 ? "thing" : "things"} to check before opening this on ${thisComputer}.`}
+          {view.fromFile
+            ? `Read from ${baseName(view.fromFile)}. Scan it from After Effects to check its fonts on ${thisComputer}.`
+            : problems === 0
+              ? `Everything the last scan found looks available on ${thisComputer}.`
+              : `${problems} ${problems === 1 ? "thing" : "things"} to check before opening this on ${thisComputer}.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <Row title="After Effects">
           <p className="flex flex-wrap items-center gap-2 text-sm">
-            {view.aeVersion ? `Version ${aeMajor(view.aeVersion)} (last scanned in ${view.aeVersion})` : "Version unknown"}
+            {view.aeVersion ? `Version ${aeMajor(view.aeVersion)} (${view.fromFile ? "saved" : "last scanned"} in ${view.aeVersion})` : "Version unknown"}
             {aeBad && (
               <Badge variant="destructive">
                 <TriangleAlert /> Newest here is {view.aeInstalled[view.aeInstalled.length - 1]}

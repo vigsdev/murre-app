@@ -75,6 +75,17 @@ export function FootagePanel({ projectId, reloadToken = 0 }: { projectId: string
           ? "The Companion is busy."
           : ""
 
+  // All good: one quiet line instead of a card.
+  if (outside.length === 0 && missing === 0 && sequences === 0) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="footage-panel">
+        <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
+        Every file the project uses is inside its folder.
+        {view.moved.length > 0 && ` ${plural(view.moved.length, "file")} copied in earlier.`}
+      </p>
+    )
+  }
+
   return (
     <section className="flex flex-col gap-2 rounded-xl border p-4" data-testid="footage-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -87,8 +98,11 @@ export function FootagePanel({ projectId, reloadToken = 0 }: { projectId: string
             {missing > 0 && ` ${plural(missing, "file")} missing.`}
             {sequences > 0 && ` ${plural(sequences, "image sequence")} not moved (copy those by hand).`}
           </p>
+          {view.fromFile && (
+            <p className="text-xs text-muted-foreground">Read from the saved project file. Scan it from After Effects to copy and relink.</p>
+          )}
         </div>
-        {outside.length > 0 && (
+        {outside.length > 0 && !view.fromFile && (
           <Button size="sm" disabled={mode !== "ready" || busy} title={reason || undefined} onClick={() => void relink()}>
             {busy || working ? <Loader2 className="animate-spin" /> : <Replace />} Copy &amp; relink in After Effects
           </Button>

@@ -45,6 +45,9 @@ pub struct FootageView {
     /// Files the Companion copied into the project (newest last). Originals were left where they were.
     pub moved: Vec<MovedEntry>,
     pub skipped: usize,
+    /// Set (to the `.aep`'s project-relative path) when this list was read from the saved project file because the
+    /// Companion hasn't scanned the project yet. `last_scan_at` stays `None`.
+    pub from_file: Option<String>,
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {
@@ -145,5 +148,52 @@ mod tests {
         assert!(get(project_with(r#"{"schemaVersion":2,"assets":[]}"#).path()).unwrap_err().to_string().contains("newer version"));
         assert!(get(project_with("not json").path()).is_err());
         assert!(get(project_with(r#"{"schemaVersion":1,"assets":"x"}"#).path()).is_err());
+    }
+}
+
+/// The footage list read from the project's saved `.aep`, for a project the Companion hasn't scanned. Each file is
+/// checked on disk: missing, inside the project folder, or outside it. Copy and relink still need the Companion.
+pub fn from_file(root: &Path) -> Option<FootageView> {
+    let (rel, info) = crate::aep_file::project_aep(root)?;
+    let assets = info
+        .footage
+        .iter()
+        .take(MAX_ENTRIES)
+        .map(|p| FootageEntry {
+            path: p.clone(),
+            names: Vec::new(),
+            status: if !Path::new(p).exists() {
+                "missing"
+            } else if crate::aep_file::is_inside(root, p) {
+                "inside"
+            } else {
+                "outside"
+            }
+            .into(),
+            dest_folder: None,
+        })
+        .collect();
+    Some(FootageView { assets, from_file: Some(rel), ..Default::default() })
+}
+
+#[cfg(test)]
+mod from_file_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn unscanned_projects_read_footage_from_the_saved_file() {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        fs::create_dir_all(r.join("01 AE Workfile")).unwrap();
+        // The sample's footage path ("/p/02 Assets/logo.png") doesn't exist here.
+        fs::write(r.join("01 AE Workfile/Film_v1.aep"), crate::aep_file::tests::sample("d", "d", None)).unwrap();
+        let v = from_file(r).unwrap();
+        assert_eq!(v.from_file.as_deref(), Some("01 AE Workfile/Film_v1.aep"));
+        assert_eq!(v.last_scan_at, None);
+        assert_eq!((v.assets.len(), v.assets[0].status.as_str()), (1, "missing"));
+        let inside = crate::platform::canonicalize(r).unwrap().join("02 Assets/a.png");
+        assert!(crate::aep_file::is_inside(r, &inside.to_string_lossy()));
+        assert!(!crate::aep_file::is_inside(r, "/elsewhere/a.png"));
     }
 }

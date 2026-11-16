@@ -16,12 +16,10 @@ import { useProjectWatch } from "@/features/sync/use-project-watch"
 import { SettingsTab } from "./settings-tab"
 import { CompanionControl } from "@/features/companion/companion-control"
 import { OpenInAfterEffects, useOpenInAfterEffects } from "../open-in-ae"
-import { STATUS_TONE } from "../constants"
 import { formatDeadline, priorityLabel, statusLabel } from "../project-utils"
 import { EditableTitle, ProjectHead, type HeadPatch } from "./project-head"
 import { PROJECTS_CHANGED } from "@/features/sync/sync-context"
 import { recordGreetingEvent } from "@/features/home/greetings/events"
-import { cn } from "@/lib/utils"
 import { AssetsTab } from "./assets-tab"
 import { ColorsTab } from "./colors-tab"
 import { ExpressionsTab } from "./expressions-tab"
@@ -163,13 +161,6 @@ export function ProjectDetailPage() {
 
   return (
     <div className="relative flex min-h-full flex-none flex-col overflow-hidden rounded-[inherit]">
-      {/* A soft colour that fades out down the page, behind everything. It follows the project's status. */}
-      {project && (
-        <div
-          aria-hidden
-          className={cn("pointer-events-none absolute inset-x-0 top-0 h-96 bg-gradient-to-b to-transparent", STATUS_TONE[project.status].glow)}
-        />
-      )}
       <PageHeader
         hero
         title={project?.name ?? "Project"}

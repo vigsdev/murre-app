@@ -15,7 +15,7 @@ export function ProfileGate({ children }: { children: ReactNode }) {
         data-tauri-drag-region
         role="status"
       >
-        <h1 className="text-3xl font-semibold tracking-tight">Murre</h1>
+        <h1 className="text-3xl font-medium tracking-tight">Murre</h1>
         <p className="text-sm text-muted-foreground">Getting your nest ready…</p>
       </div>
     )
