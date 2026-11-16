@@ -129,7 +129,7 @@ After changing dependencies, refresh the credits list shown in Settings with `no
 
 - **Apple Silicon only, for now.** The Intel and universal FFmpeg files in `src-tauri/binaries/` are placeholders. Run `scripts/make-ffmpeg.sh --both` to build them.
 - **The app isn't signed by Apple or Microsoft.** Both warn on first open (see [Installing](#installing)). On the Mac it also uses a private macOS feature for the translucent window, which rules out the Mac App Store.
-- **The release Companion still opens debug ports** (8860, 8861). Turn off the debug file in its build config before shipping.
+- **The release Companion still opens debug ports** (8970 and up). Turn off the debug file in its build config before shipping.
 - **Not everything has been checked in a real After Effects.** [FROM-CLAUDE.md](FROM-CLAUDE.md) says which parts have been and which haven't.
 
 ## More reading

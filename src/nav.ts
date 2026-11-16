@@ -11,5 +11,5 @@ export const mainNav: NavItem[] = [
   { title: "Projects", to: "/projects", icon: FolderKanban },
   { title: "Notes", to: "/notes", icon: FileText },
   { title: "Calendar", to: "/calendar", icon: Calendar },
-  { title: "Referenxe", to: "/referenxe", icon: PenTool },
+  { title: "Moodboard", to: "/moodboard", icon: PenTool },
 ]

@@ -95,13 +95,23 @@ export function priorityLabel(p: ProjectPriority) {
   return PRIORITY_OPTIONS.find((o) => o.value === p)?.label ?? p
 }
 
-/** Same name, same colours: a stable two-stop gradient used when a project has no render to show. */
-export function projectGradient(name: string): string {
+function nameHash(name: string): number {
   let h = 2166136261
   for (let i = 0; i < name.length; i++) h = Math.imul(h ^ name.charCodeAt(i), 16777619)
-  const hue = (h >>> 0) % 360
+  return h >>> 0
+}
+
+/** Same name, same colours: a stable two-stop gradient used when a project has no render to show. */
+export function projectGradient(name: string): string {
+  const h = nameHash(name)
+  const hue = h % 360
   const hue2 = (hue + 40 + ((h >>> 9) % 50)) % 360
   return `linear-gradient(135deg, oklch(0.78 0.14 ${hue}), oklch(0.62 0.17 ${hue2}))`
+}
+
+/** The project's own colour: the first hue of its cover gradient, so a project looks the same everywhere it appears. */
+export function projectColor(name: string): string {
+  return `oklch(0.72 0.13 ${nameHash(name) % 360})`
 }
 
 /** "today", "yesterday", "5 days ago", "3 weeks ago"… for a Unix-seconds timestamp. */

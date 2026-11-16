@@ -19,3 +19,4 @@ export const helloWorld = () => {
 };
 export { revealUsage } from "./reveal";
 export { addActiveCompToQueue } from "./render-queue";
+export { openProject } from "./open-project";

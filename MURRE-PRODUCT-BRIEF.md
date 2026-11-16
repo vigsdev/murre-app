@@ -98,7 +98,7 @@ What exists today for this goal [Code]:
 
 ## 3. Feature Inventory
 
-Navigation (sidebar, [Code `components/app-sidebar.tsx`, `App.tsx`]): **New Project**, Home, Projects, Notes, Calendar, Referenxe, **Spaces** (user-created), Help (placeholder; `HELP_URL` is empty in `src/config.ts`), Settings.
+Navigation (sidebar, [Code `components/app-sidebar.tsx`, `App.tsx`]): **New Project**, Home, Projects, Notes, Calendar, Moodboard, **Spaces** (user-created), Help (placeholder; `HELP_URL` is empty in `src/config.ts`), Settings.
 
 ### 3.1 Home (`features/home`)
 - **What**: greeting, quick actions (New project, All projects, Calendar, Notes), a **kanban board** with one column per status, "Coming up" (deadlines and events in the next days, plus overdue), and "Recently updated".
@@ -141,9 +141,9 @@ Navigation (sidebar, [Code `components/app-sidebar.tsx`, `App.tsx`]): **New Proj
 - ffmpeg/ffprobe are optional: without them files can still be listed, approved, opened and played. [Code `renders-tab.tsx` text]
 - Status: Implemented; real-AE rendering **Not verified** (**Unknown** if the owner has tried it).
 
-### 3.9 References tab and Referenxe page (`features/references`, `references.rs`)
+### 3.9 References tab and Moodboard page (`features/references`, `references.rs`)
 - A free-form **board** (infinite canvas): images, videos, text, PDF cards, links. Drag/drop, paste, resize, multi-select, align/distribute, bring to front/send to back, duplicate, delete, zoom, fit-all. Keyboard shortcuts `I` (import) and `K` (link).
-- Two scopes: per project (inside the project's `.murre/references/`) and global ("Referenxe" page in the app data folder).
+- Two scopes: per project (inside the project's `.murre/references/`) and global ("Moodboard" page in the app data folder).
 - Imported media is copied under a random name; **nothing in `media/` is ever deleted by the app**. Type is decided by sniffing bytes, not file extension. A board saved with the older tldraw library can be migrated.
 - **Right-click an image → "Send to After Effects"**: the Companion imports it into the active comp and centres it, or creates a 1920×1080/30 fps/10 s comp named after the image if none is active. One undo step. AE can't import WebP. Status: **Not verified** in real AE.
 - **Planned**: a video play control on the board [Owner].
@@ -278,7 +278,7 @@ After Effects (for the Companion, rendering via `aerender`); optional ffmpeg/ffp
 ## 6. User Experience and Design
 
 ### Information architecture
-Left sidebar (New Project button, Home, Projects, Notes, Calendar, Referenxe, a Spaces section, Help, Settings). Inside a project: a header banner (name, client, status/priority chips, deadline), then eight tabs: **Project, Assets, Renders, Notes, References, Colors, Expressions, Settings**. The Companion status/scan control sits beside the tabs.
+Left sidebar (New Project button, Home, Projects, Notes, Calendar, Moodboard, a Spaces section, Help, Settings). Inside a project: a header banner (name, client, status/priority chips, deadline), then eight tabs: **Project, Assets, Renders, Notes, References, Colors, Expressions, Settings**. The Companion status/scan control sits beside the tabs.
 
 ### Visual language [Code]
 React 19 + Tailwind 4 + shadcn (Base UI primitives), Inter font, Lucide icons, light/dark/system, translucent macOS window, rounded cards, a dotted canvas background on notes and boards, sonner toasts, small status chips with color per status (slate / blue / amber / violet / green / grey). A shiki code theme for expressions. [Interpretation] It looks like a modern, quiet, native-feeling Mac app.

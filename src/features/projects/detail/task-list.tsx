@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils"
 
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; tasks: Task[] }
 
-export function TaskList({ projectId, className }: { projectId: string; className?: string }) {
+/** `reloadToken` changes when the list changed on disk (from After Effects' Murre To-do panel). */
+export function TaskList({ projectId, reloadToken = 0, className }: { projectId: string; reloadToken?: number; className?: string }) {
   const [state, setState] = useState<State>({ status: "loading" })
   const [title, setTitle] = useState("")
   const [busy, setBusy] = useState(false)
@@ -26,7 +27,7 @@ export function TaskList({ projectId, className }: { projectId: string; classNam
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, reloadToken])
 
   /** Run a backend operation that returns the full updated list. */
   async function run(op: () => Promise<Task[]>): Promise<boolean> {

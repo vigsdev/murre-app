@@ -255,21 +255,3 @@ html.dark[data-accent] { --primary: oklch(0.66 0.18 var(--accent-h)); }
   background-image: radial-gradient(circle, var(--border) 1px, transparent 1.2px);
   background-size: 24px 24px;
 }
-
-/* After Effects is open on a project: a soft ring that spreads out from the dot, and light sweeping along the bar. */
-@keyframes live-ring {
-  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--c) 70%, transparent); }
-  70%, 100% { box-shadow: 0 0 0 7px transparent; }
-}
-@keyframes live-shimmer {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(400%); }
-}
-.live-ring { animation: live-ring 1.8s ease-out infinite; }
-.live-shimmer {
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
-  animation: live-shimmer 2.6s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .live-ring, .live-shimmer { animation: none; }
-}

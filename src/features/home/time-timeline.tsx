@@ -5,6 +5,8 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { useCompanionStatus } from "@/features/companion/use-companion-status"
 import { api, type ProjectTime } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
+import { Keyframe } from "@/components/keyframe"
+import { projectColor } from "@/features/projects/project-utils"
 
 type Range = "today" | "week" | "month"
 
@@ -35,11 +37,6 @@ export function formatDuration(ms: number): string {
 }
 
 /** The same project always gets the same colour. */
-function colorOf(id: string): string {
-  let h = 0
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0
-  return `oklch(0.72 0.13 ${(h * 137.5) % 360})`
-}
 
 const clock = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
 
@@ -159,11 +156,12 @@ export function TimeTimeline() {
 function Label({ row }: { row: ProjectTime }) {
   return (
     <Link to={`/projects/${row.projectId}`} className="flex min-w-0 items-center gap-2 text-sm underline-offset-4 hover:underline">
-      <span
-        className={cn("size-2 shrink-0 rounded-full", row.live && "live-ring")}
-        style={{ background: colorOf(row.projectId), "--c": colorOf(row.projectId) } as React.CSSProperties}
-        title={row.live ? "Open in After Effects now" : undefined}
-      />
+      {/* The project open in After Effects right now gets the keyframe; the others a plain dot in their colour. */}
+      {row.live ? (
+        <Keyframe color={projectColor(row.name)} title="Open in After Effects now" className="size-2.5" />
+      ) : (
+        <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: projectColor(row.name) }} />
+      )}
       <span className="truncate font-medium">{row.name}</span>
     </Link>
   )
@@ -220,25 +218,21 @@ function DayView({ rows, from, now }: { rows: ProjectTime[]; from: number; now: 
                 <span
                   key={i}
                   title={live ? `${clock(s.start)} until now` : `${clock(s.start)} to ${clock(s.end)}`}
-                  className={cn("absolute inset-y-1 min-w-1 overflow-hidden rounded-md", live && "transition-[width] duration-1000 ease-linear")}
+                  className="absolute inset-y-1 min-w-1 overflow-hidden rounded-md"
                   style={{
                     left: pct(s.start),
                     width: `calc(${pct(s.end)} - ${pct(s.start)})`,
-                    background: colorOf(r.projectId),
+                    background: projectColor(r.name),
                   }}
-                >
-                  {live && <span aria-hidden className="live-shimmer absolute inset-y-0 w-1/3" />}
-                </span>
+                />
               )
             })}
             {r.live && (
-              <span
-                aria-hidden
-                className="live-ring absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[left] duration-1000 ease-linear"
-                style={{ left: pct(r.spans[r.spans.length - 1].end), background: colorOf(r.projectId), "--c": colorOf(r.projectId) } as React.CSSProperties}
-              />
+              <span className="absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2" style={{ left: pct(r.spans[r.spans.length - 1].end) }}>
+                <Keyframe color={projectColor(r.name)} className="size-3 ring-2 ring-card" />
+              </span>
             )}
-            {nowInside && <span className="absolute inset-y-0 w-px bg-foreground/50 transition-[left] duration-1000 ease-linear" style={{ left: pct(now) }} />}
+            {nowInside && <span className="absolute inset-y-0 w-px bg-foreground/50" style={{ left: pct(now) }} />}
           </div>
           <span className="whitespace-nowrap text-right text-sm tabular-nums text-muted-foreground">{formatDuration(r.totalMs)}</span>
         </div>
@@ -286,14 +280,13 @@ function DaysView({ rows, from, days, now }: { rows: ProjectTime[]; from: number
               <span
                 key={d}
                 title={ms > 0 ? `${dayLabel(d)}: ${formatDuration(ms)}` : dayLabel(d)}
-                className={cn("h-8 rounded-md bg-muted/40", d === todayIndex && "ring-1 ring-foreground/30", r.live && d === todayIndex && "live-ring")}
+                className={cn("h-8 rounded-md bg-muted/40", d === todayIndex && "ring-1 ring-foreground/30")}
                 style={
                   ms > 0
-                    ? ({
-                        background: colorOf(r.projectId),
-                        "--c": colorOf(r.projectId),
+                    ? {
+                        background: projectColor(r.name),
                         opacity: 0.25 + 0.75 * Math.min(ms / (FULL_DAY_HOURS * HOUR), 1),
-                      } as React.CSSProperties)
+                      }
                     : undefined
                 }
               />

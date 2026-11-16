@@ -47,6 +47,9 @@ export function useStarter() {
   return { stage, running, run }
 }
 
+/** What the progress is for: making a project's first file, or opening one. */
+export type StarterTask = "create" | "open"
+
 const OPEN_YOURSELF: Record<"launchFailed" | "notStarted" | "closed", string> = {
   launchFailed: "Murre couldn’t start After Effects.",
   notStarted: "After Effects didn’t open.",
@@ -54,7 +57,7 @@ const OPEN_YOURSELF: Record<"launchFailed" | "notStarted" | "closed", string> = 
 }
 
 /** The line under the spinner for each stage. */
-function line(s: StarterStage): string {
+function line(s: StarterStage, task: StarterTask): string {
   switch (s.stage) {
     case "launching":
       return "Starting After Effects…"
@@ -64,8 +67,10 @@ function line(s: StarterStage): string {
       return "After Effects may be showing a message, like a missing drive or a crash notice. Answer it in After Effects and Murre will carry on."
     case "noCompanion":
       return "After Effects is open, but the Murre Companion hasn’t connected. If After Effects is showing a message, answer it. Otherwise restart After Effects once, or check the Companion in Settings."
-    case "openYourself":
-      return `${OPEN_YOURSELF[s.reason]} Open it yourself, then come back and press “I’ve opened After Effects”.`
+    case "openYourself": {
+      const why = task === "open" && s.reason === "closed" ? "After Effects closed before the project opened." : OPEN_YOURSELF[s.reason]
+      return `${why} Open it yourself, then come back and press “I’ve opened After Effects”.`
+    }
     case "checking":
       return "Checking what’s open in After Effects…"
     case "confirm":
@@ -74,23 +79,28 @@ function line(s: StarterStage): string {
       return `Creating ${s.file}…`
     case "creatingSlow":
       return `Still creating ${s.file}. If After Effects is showing a message, answer it there.`
+    case "opening":
+      return `Opening ${s.file}…`
+    case "openingSlow":
+      return `Still opening ${s.file}. If After Effects is asking about saving your open project, answer it there.`
   }
 }
 
 /** Stages where After Effects is probably waiting for the person, so bringing it forward helps. */
-const SHOW_AE = new Set<StarterStage["stage"]>(["waiting", "needsYou", "noCompanion", "creatingSlow"])
+const SHOW_AE = new Set<StarterStage["stage"]>(["waiting", "needsYou", "noCompanion", "creatingSlow", "openingSlow"])
 
-export function StarterProgress({ stage, aerenderPath }: { stage: StarterStage; aerenderPath: string | null }) {
+export function StarterProgress({ stage, aerenderPath, task = "create" }: { stage: StarterStage; aerenderPath: string | null; task?: StarterTask }) {
   const [cancelling, setCancelling] = useState(false)
   const act = (fn: () => Promise<void>) => fn().catch((e) => toast.error(errorMessage(e)))
   const manual = stage.stage === "openYourself"
-  const attention = manual || stage.stage === "needsYou" || stage.stage === "noCompanion" || stage.stage === "creatingSlow"
+  const attention =
+    manual || stage.stage === "needsYou" || stage.stage === "noCompanion" || stage.stage === "creatingSlow" || stage.stage === "openingSlow"
 
   return (
     <div role="status" aria-live="polite" className="flex flex-col gap-3 rounded-lg border p-4">
       <p className="flex items-start gap-2 text-sm">
         {!manual && <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />}
-        <span className={attention ? "text-foreground" : "text-muted-foreground"}>{line(stage)}</span>
+        <span className={attention ? "text-foreground" : "text-muted-foreground"}>{line(stage, task)}</span>
       </p>
       <div className="flex flex-wrap gap-2">
         {manual && (

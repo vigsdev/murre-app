@@ -27,9 +27,12 @@ pub fn pick(scan: &WorkfileScan) -> Option<&Workfile> {
         .or_else(|| scan.workfiles.first())
 }
 
-/// The After Effects app bundle that belongs to an `aerender` path: the `.app` in the same install folder
-/// (the Render Engine app is not the one to open projects with).
+/// The After Effects app that belongs to an `aerender` path. On Windows that's `AfterFX.exe` beside `aerender.exe` in
+/// `Support Files`; on a Mac, the `.app` in the same install folder (the Render Engine app is not the one to open projects with).
 pub fn app_for_aerender(aerender: &Path) -> Option<PathBuf> {
+    if let Some(exe) = aerender.parent().map(|d| d.join(WINDOWS_EXE)).filter(|p| p.is_file()) {
+        return Some(exe);
+    }
     let mut dir = aerender.parent();
     for _ in 0..3 {
         let d = dir?;
@@ -68,6 +71,31 @@ pub fn choose_app(wanted: Option<&str>, saved: Option<&str>, detected: &[Install
     }
 }
 
+/// After Effects' program on Windows.
+const WINDOWS_EXE: &str = "AfterFX.exe";
+
+/// Whether a line of `tasklist /FO CSV /NH` output is After Effects (`"AfterFX.exe","1234",…`).
+fn is_windows_ae_line(line: &str) -> bool {
+    line.trim_start().to_ascii_lowercase().starts_with("\"afterfx.exe\"")
+}
+
+/// Whether After Effects is running, on Windows. `tasklist` with fixed arguments, no shell.
+fn windows_running() -> bool {
+    match crate::platform::command("tasklist").args(["/FI", "IMAGENAME eq AfterFX.exe", "/FO", "CSV", "/NH"]).output() {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).lines().any(is_windows_ae_line),
+        Err(_) => false,
+    }
+}
+
+/// Runs a fixed PowerShell script (no outside input) and returns what it printed.
+fn powershell(script: &str) -> Option<String> {
+    let out = crate::platform::command("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
+        .output()
+        .ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
 /// Whether a line of `ps` output is the After Effects app (not the render engine or `aerender`).
 fn is_ae_process(command: &str) -> bool {
     command.contains("/Contents/MacOS/After Effects") && !command.contains("Render") && !command.contains("aerender")
@@ -75,6 +103,9 @@ fn is_ae_process(command: &str) -> bool {
 
 /// Whether After Effects (any version) is running.
 pub fn is_running() -> bool {
+    if cfg!(windows) {
+        return windows_running();
+    }
     if !cfg!(target_os = "macos") {
         return false;
     }
@@ -95,6 +126,10 @@ fn app_of(command: &str) -> Option<PathBuf> {
 
 /// The After Effects that is running now, if any (the first one found).
 pub fn running_app() -> Option<PathBuf> {
+    if cfg!(windows) {
+        let path = powershell("(Get-Process -Name AfterFX -ErrorAction SilentlyContinue | Select-Object -First 1).Path")?;
+        return Some(PathBuf::from(path)).filter(|p| p.is_file());
+    }
     if !cfg!(target_os = "macos") {
         return None;
     }
@@ -104,6 +139,14 @@ pub fn running_app() -> Option<PathBuf> {
 
 /// Start After Effects (or bring it forward) without opening a file.
 pub fn launch(app: &Path) -> AppResult<()> {
+    if cfg!(windows) {
+        // Already running: bring its window forward rather than start a second copy.
+        if windows_running() {
+            return bring_forward_windows();
+        }
+        // Started and left running; Murre doesn't wait for it to quit.
+        return crate::platform::command(app).spawn().map(|_| ()).map_err(|e| AppError::io(app, e));
+    }
     if !cfg!(target_os = "macos") {
         return invalid(format!("Opening After Effects from Murre isn’t available on {} yet.", crate::platform::OS_NAME));
     }
@@ -113,6 +156,18 @@ pub fn launch(app: &Path) -> AppResult<()> {
     } else {
         invalid("macOS could not start After Effects.")
     }
+}
+
+/// Brings the running After Effects window to the front on Windows.
+fn bring_forward_windows() -> AppResult<()> {
+    let script = "$p = Get-Process -Name AfterFX -ErrorAction SilentlyContinue | Select-Object -First 1; \
+                  if ($p) { [void](New-Object -ComObject WScript.Shell).AppActivate($p.Id) }";
+    powershell(script).map(|_| ()).ok_or_else(|| AppError::Invalid("Couldn’t bring After Effects to the front. Switch to it from the taskbar.".into()))
+}
+
+/// The absolute path of `rel`, checked to be an After Effects project inside `root`.
+pub fn aep_target(root: &Path, rel: &str) -> AppResult<PathBuf> {
+    check_aep(root, rel)
 }
 
 fn check_aep(root: &Path, rel: &str) -> AppResult<PathBuf> {
@@ -126,6 +181,16 @@ fn check_aep(root: &Path, rel: &str) -> AppResult<PathBuf> {
 
 /// Open `rel` (a path inside `root`) in `app`, or with the system default when `app` is `None`.
 pub fn open(root: &Path, rel: &str, app: Option<&Path>) -> AppResult<()> {
+    if cfg!(windows) {
+        let target = check_aep(root, rel)?;
+        // The path is absolute, so it can't be read as an option; no shell is involved. Without an install, Explorer
+        // opens it with whatever Windows uses for .aep files.
+        let spawned = match app {
+            Some(app) => crate::platform::command(app).arg(&target).spawn(),
+            None => crate::platform::command("explorer.exe").arg(&target).spawn(),
+        };
+        return spawned.map(|_| ()).map_err(|e| AppError::io(&target, e));
+    }
     if !cfg!(target_os = "macos") {
         return invalid(format!("Opening projects in After Effects from Murre isn’t available on {} yet.", crate::platform::OS_NAME));
     }
@@ -147,6 +212,24 @@ pub fn open(root: &Path, rel: &str, app: Option<&Path>) -> AppResult<()> {
 mod tests {
     use super::*;
     use crate::workfiles::CurrentAep;
+
+    #[test]
+    fn windows_task_list_lines() {
+        assert!(is_windows_ae_line("\"AfterFX.exe\",\"1234\",\"Console\",\"1\",\"2,000,000 K\""));
+        assert!(is_windows_ae_line("\"afterfx.exe\",\"1\""));
+        assert!(!is_windows_ae_line("INFO: No tasks are running which match the specified criteria."));
+        assert!(!is_windows_ae_line("\"aerender.exe\",\"99\""));
+    }
+
+    #[test]
+    fn the_windows_app_is_afterfx_beside_aerender() {
+        let d = tempfile::tempdir().unwrap();
+        let support = d.path().join("Adobe After Effects 2026/Support Files");
+        fs::create_dir_all(&support).unwrap();
+        fs::write(support.join("aerender.exe"), "x").unwrap();
+        fs::write(support.join("AfterFX.exe"), "x").unwrap();
+        assert_eq!(app_for_aerender(&support.join("aerender.exe")), Some(support.join("AfterFX.exe")));
+    }
 
     #[test]
     fn only_the_after_effects_app_counts_as_running() {

@@ -11,9 +11,9 @@ import { readSnapshot, writeSnapshot } from "../lib/murre/snapshot-store";
 import { readProjectSettings, writeProjectSettings, type ProjectSettings } from "../lib/murre/settings";
 import { NO_PROJECT, setMenuHandler, setMenuState, type SettingsPatch } from "../lib/utils/panel-prefs";
 import type { AppCommand, BridgeClient, VersionFile } from "../lib/murre/bridge-client";
-import { createBridge, messageOf } from "./create-bridge";
+import { createBridge, messageOf, startMurreOnWindows } from "./create-bridge";
 import { host, trash } from "./host";
-import { handleCreateStarter, handleImportImage, handleReveal, handleSaveAs, handleInspect, PANEL_BEAT_EVENT, PANEL_BEAT_MS } from "../lib/murre/starter-flow";
+import { handleCreateStarter, handleImportImage, handleOpenProject, handleReveal, handleSaveAs, handleInspect, beatData, BYE_RECHECK_MS, PANEL_BEAT_EVENT, PANEL_BEAT_MS, PANEL_BYE_EVENT } from "../lib/murre/starter-flow";
 import { csi } from "../lib/utils/bolt";
 import { CSEvent } from "../lib/cep/csinterface";
 import { child_process, os, path as nodePath } from "../lib/cep/node";
@@ -84,6 +84,7 @@ export function useCompanion() {
   const latest = useRef(0);
   const [appLinked, setAppLinked] = useState(false);
   const [appLinkDetail, setAppLinkDetail] = useState("");
+  const linkedRef = useRef(false);
   const bridge = useRef<BridgeClient | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const linkRef = useRef<LinkState>({ kind: "checking" });
@@ -291,6 +292,11 @@ export function useCompanion() {
       if (cmd.done) void refreshRef.current();
       return;
     }
+    if (cmd.kind === "openProject") {
+      const client = bridge.current;
+      if (client) void handleOpenProject(cmd.requestId, cmd.path, (p) => evalTS("openProject", p), client).then(() => refreshRef.current());
+      return;
+    }
     if (cmd.kind === "saveAs") {
       const client = bridge.current;
       if (client) void handleSaveAs(cmd.requestId, cmd.path, (p) => evalTS("saveProjectAs", p), client).then(() => refreshRef.current());
@@ -332,24 +338,56 @@ export function useCompanion() {
   // Tell the hidden background helper that this panel is open, so only one of them holds the app link.
   useEffect(() => {
     if (typeof window.cep === "undefined") return;
-    const beat = () => {
+    const say = (type: string, data: string) => {
       try {
-        const ev = new CSEvent(PANEL_BEAT_EVENT, "APPLICATION", csi.getApplicationID() as string, csi.getExtensionID() as string);
-        ev.data = String(Date.now());
+        const ev = new CSEvent(type, "APPLICATION", csi.getApplicationID() as string, csi.getExtensionID() as string);
+        ev.data = data;
         csi.dispatchEvent(ev);
       } catch {
         /* the helper simply keeps the link */
       }
     };
-    beat();
-    const t = window.setInterval(beat, PANEL_BEAT_MS);
-    return () => window.clearInterval(t);
+    // Each beat says whether this panel holds the app link, so the helper can hold it while the panel can't.
+    const beat = () => say(PANEL_BEAT_EVENT, beatData(linkedRef.current));
+    // Closing the panel: let go of the app link first, then tell the helper to take it now. If After Effects closes the
+    // panel without these firing, the helper still takes over once the beats stop.
+    let gone = false;
+    let t = 0;
+    let recheck = 0;
+    const startBeats = () => {
+      beat();
+      t = window.setInterval(beat, PANEL_BEAT_MS);
+    };
+    const bye = () => {
+      if (gone) return;
+      gone = true;
+      window.clearInterval(t);
+      bridge.current?.stop();
+      say(PANEL_BYE_EVENT, String(Date.now()));
+      // A real close never gets here. On Windows the close signal can fire while the panel stays open: take the link back.
+      recheck = window.setTimeout(() => {
+        console.info("[Murre link] The panel is still open after a close signal; connecting again.");
+        gone = false;
+        startBeats();
+        bridge.current?.start();
+      }, BYE_RECHECK_MS);
+    };
+    startBeats();
+    window.addEventListener("pagehide", bye);
+    window.addEventListener("beforeunload", bye);
+    return () => {
+      window.clearInterval(t);
+      window.clearTimeout(recheck);
+      window.removeEventListener("pagehide", bye);
+      window.removeEventListener("beforeunload", bye);
+    };
   }, []);
 
   // Connect to the desktop app (if it is running) and keep trying.
   useEffect(() => {
     const { client, why } = createBridge({
       onConnection: (on) => {
+        linkedRef.current = on;
         setAppLinked(on);
         const p = pendingShow.current;
         if (on && p) {
@@ -412,12 +450,18 @@ export function useCompanion() {
 
   /**
    * Bring the Murre app forward; with `open: "package"`, on the linked project with its Package window open. When the app is not running it is
-   * started (macOS) and the request is sent once it connects. Returns a sentence when that can't be done.
+   * started (macOS and Windows) and the request is sent once it connects. Returns a sentence when that can't be done.
    */
   const showApp = useCallback((open: "package" | null = null): string | null => {
     const cur = linkRef.current;
     const projectId = cur.kind === "linked" ? cur.link.projectId : null;
     if (bridge.current?.sendShowApp(newId(), projectId, open)) return null;
+    if (os.platform() === "win32") {
+      const why = startMurreOnWindows();
+      if (why) return why;
+      pendingShow.current = { projectId, open };
+      return null;
+    }
     if (os.platform() !== "darwin") return "Open the Murre app first.";
     try {
       child_process.execFile("open", ["-b", APP_IDENTIFIER], { timeout: 15000 }, () => {});

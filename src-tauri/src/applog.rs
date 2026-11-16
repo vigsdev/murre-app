@@ -168,8 +168,24 @@ pub fn error(area: &str, message: &str) {
     }
 }
 
-/// "macOS 15.5" on a Mac. Elsewhere just the system's name, because the version needs a system call per system.
+/// "macOS 15.5" on a Mac, "Windows 10.0.26100.4061" on Windows (Windows 11 still reports 10.0; the build number tells
+/// them apart). Elsewhere just the system's name.
+/// The number in `ver`'s "Microsoft Windows [Version 10.0.26100.4061]".
+fn windows_version(ver: &str) -> Option<String> {
+    let at = ver.find("Version ")? + "Version ".len();
+    let rest = &ver[at..];
+    let v: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    (!v.is_empty()).then_some(v)
+}
+
 fn os_version() -> String {
+    if cfg!(windows) {
+        let out = crate::platform::command("cmd").args(["/C", "ver"]).output().ok().filter(|o| o.status.success());
+        return out
+            .and_then(|o| windows_version(&String::from_utf8_lossy(&o.stdout)))
+            .map(|v| format!("Windows {v}"))
+            .unwrap_or_else(|| "Windows".into());
+    }
     if !cfg!(target_os = "macos") {
         return crate::platform::OS_NAME.to_string();
     }
@@ -208,6 +224,12 @@ pub fn report() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_version_from_ver() {
+        assert_eq!(windows_version("\r\nMicrosoft Windows [Version 10.0.26100.4061]\r\n").as_deref(), Some("10.0.26100.4061"));
+        assert_eq!(windows_version("something else"), None);
+    }
 
     #[test]
     fn writes_lines_with_time_level_and_area_and_keeps_each_on_one_line() {

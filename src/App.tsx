@@ -1,5 +1,5 @@
 import { Home } from "lucide-react"
-import { Route, Routes, useParams } from "react-router"
+import { Navigate, Route, Routes, useParams } from "react-router"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ComingSoonPage } from "@/components/coming-soon-page"
 import { TitleBar } from "@/components/title-bar"
@@ -12,10 +12,12 @@ import { ProjectDetailPage } from "@/features/projects/detail/project-detail-pag
 import { ProjectsPage } from "@/features/projects/projects-page"
 import { NewProjectPage } from "@/features/projects/new-project-page"
 import { AddProjectProgress } from "@/features/projects/add-from-ae"
+import { OpenProgressCard } from "@/features/projects/open-in-ae"
 import { HomePage } from "@/features/home/home-page"
 import { useNativeTheme } from "@/hooks/use-native-theme"
 import { useAppearance } from "@/lib/preferences"
 import { useAppMenuEvents } from "@/hooks/use-app-menu-events"
+import { useUpdateToasts } from "@/features/updates/use-update-progress"
 import { useFlushOnClose } from "@/hooks/use-flush-on-close"
 import { MissingProjectPrompt } from "@/features/sync/missing-project-prompt"
 import { SyncProvider } from "@/features/sync/sync-context"
@@ -23,7 +25,7 @@ import { SpacesProvider } from "@/features/spaces/spaces-context"
 import { ProjectDndProvider } from "@/features/spaces/project-dnd"
 import { CalendarPage } from "@/features/calendar/calendar-page"
 import { NotesPage } from "@/pages/notes-page"
-import { ReferenxePage } from "@/pages/referenxe-page"
+import { MoodboardPage } from "@/pages/moodboard-page"
 import { SettingsPage } from "@/pages/settings-page"
 
 /** A Space's page: the Projects list filtered to that Space (keyed so filters reset per Space). */
@@ -35,6 +37,7 @@ function SpacePage() {
 function App() {
   useFlushOnClose()
   useAppMenuEvents()
+  useUpdateToasts()
   useNativeTheme()
   useAppearance()
   return (
@@ -43,6 +46,7 @@ function App() {
     <SidebarProvider>
       <TitleBar />
       <AddProjectProgress />
+      <OpenProgressCard />
       <MissingProjectPrompt />
       <ProjectDndProvider>
       <TabsProvider>
@@ -60,7 +64,9 @@ function App() {
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
-          <Route path="/referenxe" element={<ReferenxePage />} />
+          <Route path="/moodboard" element={<MoodboardPage />} />
+          {/* The Moodboard's old name and address, so links and saved tabs still land there. */}
+          <Route path="/referenxe" element={<Navigate to="/moodboard" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route
             path="*"

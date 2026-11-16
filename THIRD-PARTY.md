@@ -12,8 +12,10 @@ GNU Lesser General Public License, version 2.1 or later, with no GPL or non-free
 FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
 
 The programs are linked statically and are not modified. The exact source is the release tarball for the version named
-by `FFMPEG_VERSION` in `scripts/make-ffmpeg.sh`, and the configure options used are in that script, so the same build can
-be made again. You can swap in your own build by replacing `ffmpeg` and `ffprobe` inside `Murre.app/Contents/MacOS`.
+by `FFMPEG_VERSION` in `scripts/make-ffmpeg.sh` (Mac) and `scripts/make-ffmpeg-windows.sh` (Windows, built with
+MinGW-w64), and the configure options used are in those scripts, so the same build can be made again. You can swap in
+your own build by replacing `ffmpeg` and `ffprobe` inside `Murre.app/Contents/MacOS` on a Mac, or `ffmpeg.exe` and
+`ffprobe.exe` in Murre's install folder on Windows.
 LGPL text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 
 ## Adobe CEP files

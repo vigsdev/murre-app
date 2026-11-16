@@ -15,7 +15,7 @@ import { motion } from "motion/react"
 import { useState } from "react"
 import { Link } from "react-router"
 import { Badge } from "@/components/ui/badge"
-import { STATUS_ICON, STATUS_TONE } from "@/features/projects/constants"
+import { STATUS_ICON } from "@/features/projects/constants"
 import { openProjectInAfterEffects } from "@/features/projects/open-in-ae"
 import { ProjectCover } from "@/features/projects/project-cover"
 import { formatDeadline, isOverdue, priorityLabel } from "@/features/projects/project-utils"
@@ -40,16 +40,16 @@ function Card({ p, overlay }: { p: ProjectRecord; overlay?: boolean }) {
   return (
     <div
       className={cn(
-        "group/kcard relative flex items-center gap-3 rounded-xl border bg-card p-2 text-card-foreground",
+        "group/kcard relative flex items-center gap-3 rounded-lg border bg-card p-2 text-card-foreground",
         overlay && "rotate-1 shadow-md",
       )}
     >
-      <ProjectCover projectId={p.id} name={p.name} available={p.available} className="size-14 shrink-0 rounded-lg" />
+      <ProjectCover projectId={p.id} name={p.name} available={p.available} className="size-14 shrink-0 rounded-sm" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Link
           to={`/projects/${p.id}`}
           draggable={false}
-          className="truncate text-sm font-semibold outline-none group-hover/kcard:pr-7 group-focus-within/kcard:pr-7"
+          className="truncate text-sm font-medium outline-none group-hover/kcard:pr-7 group-focus-within/kcard:pr-7"
         >
           {p.name}
         </Link>
@@ -119,11 +119,11 @@ function Column({ status, label, projects }: { status: ProjectStatus; label: str
         isOver && "bg-muted ring-2 ring-ring/30",
       )}
     >
-      {/* The heading takes the status colour, the same one the project page and the calendar use. */}
-      <header className={cn("flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium", STATUS_TONE[status].chip)}>
+      {/* A quiet heading: the status colour lives only in its icon, the same one the project page and the calendar use. */}
+      <header className="flex items-center gap-2 px-2 py-1 text-sm font-medium">
         <StatusIcon status={status} />
         {label}
-        <span className="ml-auto rounded-md bg-background/50 px-1.5 text-xs font-normal tabular-nums text-foreground/70">{projects.length}</span>
+        <span className="ml-auto text-xs font-normal tabular-nums text-muted-foreground">{projects.length}</span>
       </header>
       <CardList>
         {projects.map((p) => (

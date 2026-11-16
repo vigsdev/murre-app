@@ -613,7 +613,7 @@ export interface CreateOutcome {
   cancelled: boolean
 }
 
-/** Where "Open After Effects and start" is, pushed as the `starter-progress` event. */
+/** Where "Open After Effects and start" is, pushed as the `starter-progress` event (and `open-progress` for Open in After Effects). */
 export type StarterStage =
   | { stage: "launching" }
   | { stage: "waiting" }
@@ -624,6 +624,23 @@ export type StarterStage =
   | { stage: "confirm"; kind: "unsaved" | "saved" | "unknown"; name: string; desktopDir: string | null }
   | { stage: "creating"; file: string }
   | { stage: "creatingSlow"; file: string }
+  | { stage: "opening"; file: string }
+  | { stage: "openingSlow"; file: string }
+
+/** What a link's page offers for its card. `file` is the picture, saved in the board's media folder. */
+export interface LinkPreview {
+  title: string | null
+  site: string | null
+  file: string | null
+}
+
+/** How "Open in After Effects" ended. `path` is relative to the project folder. */
+export interface OpenOutcome {
+  path: string
+  /** Nothing was opened: Cancel was pressed in Murre or in After Effects' "save changes?" prompt. */
+  cancelled: boolean
+  message: string | null
+}
 
 /** What the last Apple Calendar sync did. `at` is Unix seconds. */
 export interface CalendarSyncReport {
@@ -705,6 +722,13 @@ export interface RenderJob {
   outputExists: boolean
   warnings: string[]
 }
+
+/** What the updater is doing, while there is something to show. */
+export type UpdateProgress =
+  | { stage: "idle" }
+  | { stage: "checking" }
+  | { stage: "downloading"; version: string; done: number; total: number | null }
+  | { stage: "installing"; version: string }
 
 export const api = {
   getComps: (projectId: string) => invoke<CompsView>("get_comps", { projectId }),
@@ -829,7 +853,7 @@ export const api = {
    * current (or highest-version) file is used; `aerenderPath` picks the After Effects version (newest if omitted).
    */
   openInAfterEffects: (projectId: string, path?: string | null, aerenderPath?: string | null) =>
-    invoke<string>("open_in_after_effects", { projectId, path: path ?? null, aerenderPath: aerenderPath ?? null }),
+    invoke<OpenOutcome>("open_in_after_effects", { projectId, path: path ?? null, aerenderPath: aerenderPath ?? null }),
   getMediaTools: () => invoke<MediaTools>("get_media_tools"),
   listRenders: (projectId: string) => invoke<RendersListing>("list_renders", { projectId }),
   setRenderApproved: (projectId: string, path: string, approved: boolean) =>
@@ -846,6 +870,8 @@ export const api = {
   saveReferences: (projectId: string | null, canvas: Record<string, unknown>, expectedRevision: number) =>
     invoke<ReferencesView>("save_references", { projectId, canvas, expectedRevision }),
   /** `dataBase64`: raw file bytes, base64 encoded (no data-URL prefix). */
+  /** A link card's title and preview picture, fetched once when the link is added. `projectId` null: the global board. */
+  fetchLinkPreview: (projectId: string | null, url: string) => invoke<LinkPreview>("fetch_link_preview", { projectId, url }),
   importReferenceMedia: (projectId: string | null, dataBase64: string) =>
     invoke<ImportedMedia>("import_reference_media", { projectId, dataBase64 }),
   /** Absolute path for `convertFileSrc`; grants the webview read access to that one file. */
@@ -897,6 +923,8 @@ export const api = {
   getAppInfo: () => invoke<AppInfo>("get_app_info"),
   /** Looks for a newer Murre and shows the answer in a native dialog. */
   checkForUpdates: () => invoke<void>("check_for_updates"),
+  /** What the updater is doing now; changes arrive as `update-progress` events. */
+  updateProgress: () => invoke<UpdateProgress>("update_progress"),
   /** `null` means no profile exists yet (first launch). */
   /** The folder setup new projects are made with, and the kinds of file the editor offers. */
   getFolderSetup: () => invoke<FolderSetup>("get_folder_setup"),

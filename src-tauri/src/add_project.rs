@@ -175,17 +175,26 @@ fn run(app: &tauri::AppHandle, spec: Spec) {
     }
     let _ = workfiles::set_current(&root, Some(&rel));
 
+    // To-dos kept next to the original file by the Murre To-do panel come along.
+    let mut note = String::new();
+    if open.kind == "saved"
+        && let Some(folder) = std::path::Path::new(&open.path).parent()
+        && let Ok(n) = crate::tasks::bring_along(folder, &root)
+        && n > 0
+    {
+        note = format!(" {n} {} came along.", if n == 1 { "to-do" } else { "to-dos" });
+    }
+
     // Bring along the older versions the person chose. They are copied as they are: not relinked, because only the project
     // that is open in After Effects can be.
-    let mut note = String::new();
     if open.kind == "saved" && !spec.versions.is_empty() {
         rep.say("Copying the other versions…");
         let report = versions::copy_selected(std::path::Path::new(&open.path), &spec.versions, &root.join(ae_project::WORKFILE_DIR));
-        note = match (report.copied.len(), report.failed.len()) {
+        note.push_str(&match (report.copied.len(), report.failed.len()) {
             (0, 0) => String::new(),
             (n, 0) => format!(" {n} other {} copied.", if n == 1 { "version was" } else { "versions were" }),
             (n, f) => format!(" {n} other versions copied, {f} could not be."),
-        };
+        });
     }
 
     // Premiere Pro projects the person chose: each is collected on its own, and a problem with one never stops the add.

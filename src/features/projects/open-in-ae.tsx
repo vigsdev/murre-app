@@ -1,5 +1,6 @@
+import { listen } from "@tauri-apps/api/event"
 import { ChevronDown, Clapperboard } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useState, useSyncExternalStore } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,8 +12,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { api, errorMessage, type AerenderInstall } from "@/lib/tauri"
+import { api, errorMessage, type AerenderInstall, type OpenOutcome, type StarterStage } from "@/lib/tauri"
 import { baseName } from "@/lib/platform"
+import { StarterProgress } from "./starter-progress"
 
 const KEY = "murre.openWithAfterEffects"
 
@@ -33,20 +35,61 @@ function remember(path: string | null) {
   }
 }
 
+/** The Open in After Effects that is running, for the progress card. One at a time. */
+interface OpenRun {
+  stage: StarterStage | null
+  aerenderPath: string | null
+}
+let run: OpenRun | null = null
+const listeners = new Set<() => void>()
+const setRun = (next: OpenRun | null) => {
+  run = next
+  listeners.forEach((l) => l())
+}
+const subscribe = (l: () => void) => {
+  listeners.add(l)
+  return () => void listeners.delete(l)
+}
+
+/**
+ * Opens `path` (or the project's current file) in After Effects and says how it went. While Murre waits for After
+ * Effects to start, the progress card shows each step.
+ */
+async function runOpen(projectId: string, path: string | null | undefined, aerenderPath: string | null): Promise<OpenOutcome> {
+  if (run) throw new Error("Murre is already opening a project in After Effects.")
+  setRun({ stage: null, aerenderPath })
+  let off: (() => void) | undefined
+  try {
+    off = await listen<StarterStage>("open-progress", (e) => run && setRun({ ...run, stage: e.payload }))
+  } catch {
+    // Without events it still works; the card just doesn't show.
+  }
+  try {
+    return await api.openInAfterEffects(projectId, path, aerenderPath)
+  } finally {
+    off?.()
+    setRun(null)
+  }
+}
+
+function announce(o: OpenOutcome) {
+  if (o.cancelled) toast.message(o.message ?? "Nothing was opened.")
+  else toast.success(`Opened ${baseName(o.path)} in After Effects`)
+}
+
 /**
  * Opens a project's current .aep in After Effects with the version chosen earlier (or the newest), for places
  * without the version menu, such as project cards. A remembered version that is gone is forgotten and the
  * newest is used instead.
  */
 export async function openProjectInAfterEffects(projectId: string): Promise<void> {
-  const show = (opened: string) => toast.success(`Opening ${baseName(opened)} in After Effects`)
   try {
-    show(await api.openInAfterEffects(projectId, null, remembered()))
+    announce(await runOpen(projectId, null, remembered()))
   } catch (e) {
     if (remembered() && /not one of the installed versions/i.test(errorMessage(e))) {
       remember(null)
       try {
-        show(await api.openInAfterEffects(projectId, null, null))
+        announce(await runOpen(projectId, null, null))
         return
       } catch (e2) {
         toast.error(errorMessage(e2))
@@ -55,6 +98,17 @@ export async function openProjectInAfterEffects(projectId: string): Promise<void
     }
     toast.error(errorMessage(e))
   }
+}
+
+/** Where Open in After Effects is while it waits for After Effects. Mounted once, in the app shell. */
+export function OpenProgressCard() {
+  const current = useSyncExternalStore(subscribe, () => run)
+  if (!current?.stage) return null
+  return (
+    <div className="fixed right-4 bottom-4 z-50 w-96 max-w-[calc(100vw-2rem)] rounded-lg bg-popover text-popover-foreground shadow-lg">
+      <StarterProgress stage={current.stage} aerenderPath={current.aerenderPath} task="open" />
+    </div>
+  )
 }
 
 const labelOf = (i: AerenderInstall) => (i.version ? `${i.label} (${i.version})` : i.label)
@@ -88,8 +142,7 @@ export function useOpenInAfterEffects(projectId: string) {
   const open = useCallback(
     async (path?: string) => {
       try {
-        const opened = await api.openInAfterEffects(projectId, path, choice)
-        toast.success(`Opening ${baseName(opened)} in After Effects`)
+        announce(await runOpen(projectId, path, choice))
       } catch (e) {
         toast.error(errorMessage(e))
       }

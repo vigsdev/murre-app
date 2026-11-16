@@ -27,10 +27,14 @@ export function newTabId(): string {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 10)
 }
 
+/** Pages that moved: a saved tab with the old address opens the new one. */
+const RENAMED: Record<string, string> = { "/referenxe": "/moodboard" }
+
 export function normalizePath(path: string): string {
   const clean = path.split(/[?#]/)[0] || "/"
   const trimmed = clean.length > 1 ? clean.replace(/\/+$/, "") : clean
-  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`
+  const p = trimmed.startsWith("/") ? trimmed : `/${trimmed}`
+  return RENAMED[p] ?? p
 }
 
 /** `/projects/:id` (not `/projects/new`). */
@@ -154,7 +158,7 @@ const FIXED_TITLES: Record<string, string> = {
   "/projects/new": "New project",
   "/notes": "Notes",
   "/calendar": "Calendar",
-  "/referenxe": "Referenxe",
+  "/moodboard": "Moodboard",
   "/settings": "Settings",
 }
 

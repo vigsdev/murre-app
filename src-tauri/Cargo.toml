@@ -34,6 +34,15 @@ flate2 = "1.1.10"
 dunce = "1"
 # Unpacks the signed Companion package on every system (macOS and Windows), instead of an `unzip` program.
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+# Link previews on reference boards. The same HTTP client and TLS (rustls with ring) the updater already uses.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+# Render cancel on Windows: a Job Object owns aerender and everything it starts.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+# Opening Murre while it already runs (say, in the tray) shows that copy instead of starting a second one. macOS does this itself.
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

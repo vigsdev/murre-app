@@ -112,7 +112,30 @@ fn looks_installed(names: &HashSet<String>, name: &str, match_name: &str) -> boo
         .any(|c| names.iter().any(|n| n.contains(c.as_str()) || c.contains(n.as_str())))
 }
 
+/// Where After Effects is installed: one folder per version ("Adobe After Effects 2026").
+fn apps_dir() -> &'static Path {
+    Path::new(if cfg!(windows) { WINDOWS_ADOBE } else { "/Applications" })
+}
+
+const WINDOWS_ADOBE: &str = r"C:\Program Files\Adobe";
+
+/// Plug-in folders on Windows: Adobe's shared one, and each After Effects version's own (inside `Support Files`).
+fn windows_plugin_dirs(adobe: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![adobe.join("Common").join("Plug-ins")];
+    if let Ok(apps) = fs::read_dir(adobe) {
+        for a in apps.flatten() {
+            if a.file_name().to_string_lossy().starts_with("Adobe After Effects") {
+                dirs.push(a.path().join("Support Files").join("Plug-ins"));
+            }
+        }
+    }
+    dirs
+}
+
 fn default_plugin_dirs() -> Vec<PathBuf> {
+    if cfg!(windows) {
+        return windows_plugin_dirs(Path::new(WINDOWS_ADOBE));
+    }
     let mut dirs = vec![
         PathBuf::from("/Library/Application Support/Adobe/Common/Plug-ins"),
         PathBuf::from("/Library/Application Support/Adobe/Plug-Ins"),
@@ -171,7 +194,7 @@ fn label(v: &Value, key: &str) -> Option<String> {
 }
 
 pub fn get(root: &Path) -> AppResult<NeedsView> {
-    get_with(root, &default_plugin_dirs(), Path::new("/Applications"))
+    get_with(root, &default_plugin_dirs(), apps_dir())
 }
 
 pub fn get_with(root: &Path, plugin_dirs: &[PathBuf], apps: &Path) -> AppResult<NeedsView> {
@@ -311,6 +334,18 @@ mod tests {
         assert_eq!(v.plugins.len(), 2);
         assert!(v.plugins[0].seen_installed && v.plugins[0].layer_count == 3);
         assert!(!v.plugins[1].seen_installed);
+    }
+
+    #[test]
+    fn windows_plugin_folders_include_each_versions_support_files() {
+        let adobe = tempfile::tempdir().unwrap();
+        fs::create_dir_all(adobe.path().join("Adobe After Effects 2026/Support Files/Plug-ins")).unwrap();
+        fs::create_dir_all(adobe.path().join("Adobe Premiere Pro 2026")).unwrap();
+        let dirs = windows_plugin_dirs(adobe.path());
+        assert_eq!(
+            dirs,
+            [adobe.path().join("Common").join("Plug-ins"), adobe.path().join("Adobe After Effects 2026").join("Support Files").join("Plug-ins")]
+        );
     }
 
     #[test]

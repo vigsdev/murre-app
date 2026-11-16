@@ -40,11 +40,44 @@ export async function handleCreateStarter(
 /** The panel announces itself this often; the background helper stays off the app link while it hears it. */
 export const PANEL_BEAT_EVENT = "murre.panel.alive";
 export const PANEL_BEAT_MS = 3000;
+/** Without a beat for this long the helper takes over: the panel was closed without saying so (or After Effects is busy). */
 export const PANEL_GONE_MS = 9000;
+/** The panel says this as it closes, so the helper takes over the app link at once instead of after `PANEL_GONE_MS`. */
+export const PANEL_BYE_EVENT = "murre.panel.bye";
+/**
+ * A panel that is open but has had no app link for this long lets the helper hold the link meanwhile. The panel
+ * keeps trying, and the app hands the link back to it as soon as it gets through.
+ */
+export const PANEL_STUCK_MS = 15000;
+/** After saying bye, a panel that is still running this much later was not closed (Windows can signal a close that never happens). */
+export const BYE_RECHECK_MS = 2000;
 
-/** Whether the background helper should hold the link to the app. */
-export function backgroundShouldConnect(now: number, lastBeat: number | null): boolean {
-  return lastBeat === null || now - lastBeat > PANEL_GONE_MS;
+/** What the panel's beat carries. */
+export const beatData = (linked: boolean) => JSON.stringify({ t: Date.now(), linked });
+
+/**
+ * Whether a beat says the panel holds the app link. CEP may hand the data over as text or already parsed. Beats
+ * from older panels carry only a timestamp and count as linked, which is how they were treated before.
+ */
+export function beatLinked(data: unknown): boolean {
+  let v = data;
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return true;
+    }
+  }
+  return !(v && typeof v === "object" && (v as { linked?: unknown }).linked === false);
+}
+
+/**
+ * Whether the background helper should hold the link to the app: no panel is beating, or the one that is
+ * has been without a link since `unlinkedSince` for longer than `PANEL_STUCK_MS`.
+ */
+export function backgroundShouldConnect(now: number, lastBeat: number | null, unlinkedSince: number | null = null): boolean {
+  if (lastBeat === null || now - lastBeat > PANEL_GONE_MS) return true;
+  return unlinkedSince !== null && now - unlinkedSince > PANEL_STUCK_MS;
 }
 
 /** Answers the app's "what is open in After Effects?" question. Never throws. */
@@ -107,6 +140,22 @@ export async function handleSaveAs(
     else reply.sendStarterFailed(requestId, (r && r.message) || "After Effects could not save the project.");
   } catch (e) {
     reply.sendStarterFailed(requestId, e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** Answers the app's "open this project in After Effects". Never throws. */
+export async function handleOpenProject(
+  requestId: string,
+  path: string,
+  run: (path: string) => Promise<{ ok: boolean; cancelled: boolean; message: string }>,
+  reply: { sendOpenDone(requestId: string): void; sendOpenFailed(requestId: string, message: string, cancelled?: boolean): void },
+): Promise<void> {
+  try {
+    const r = await run(path);
+    if (r && r.ok) reply.sendOpenDone(requestId);
+    else reply.sendOpenFailed(requestId, (r && r.message) || "After Effects couldn’t open the project.", !!(r && r.cancelled));
+  } catch (e) {
+    reply.sendOpenFailed(requestId, e instanceof Error ? e.message : String(e));
   }
 }
 

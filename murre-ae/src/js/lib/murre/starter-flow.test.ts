@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { backgroundShouldConnect, handleCreateStarter, handleImportImage, handleReveal, handleSaveAs, suggestName, handleInspect, PANEL_GONE_MS } from "./starter-flow";
+import { backgroundShouldConnect, beatData, beatLinked, PANEL_STUCK_MS, handleCreateStarter, handleOpenProject, handleImportImage, handleReveal, handleSaveAs, suggestName, handleInspect, PANEL_GONE_MS } from "./starter-flow";
 import { parseCommand, type StarterCommand } from "./bridge-client";
 
 const cmd: StarterCommand = { kind: "createStarter", requestId: "r1", path: "/p/a.aep", compName: "Main Comp", width: 1920, height: 1080, fps: 30, seconds: 30, rescueDir: "/Users/x/Desktop" };
@@ -33,6 +33,28 @@ describe("backgroundShouldConnect", () => {
     expect(backgroundShouldConnect(1000, null)).toBe(true);
     expect(backgroundShouldConnect(1000 + PANEL_GONE_MS + 1, 1000)).toBe(true);
     expect(backgroundShouldConnect(1000 + 3000, 1000)).toBe(false);
+  });
+
+  it("takes the link while an open panel has been without one for too long", () => {
+    const now = 100_000;
+    expect(backgroundShouldConnect(now, now - 1000, null)).toBe(false);
+    expect(backgroundShouldConnect(now, now - 1000, now - 5000)).toBe(false);
+    expect(backgroundShouldConnect(now, now - 1000, now - PANEL_STUCK_MS - 1)).toBe(true);
+  });
+});
+
+describe("beatLinked", () => {
+  it("reads the panel's beat, as text or already parsed", () => {
+    expect(beatLinked(beatData(true))).toBe(true);
+    expect(beatLinked(beatData(false))).toBe(false);
+    expect(beatLinked({ t: 1, linked: false })).toBe(false);
+  });
+
+  it("counts beats from older panels (a bare timestamp) as linked", () => {
+    expect(beatLinked(String(Date.now()))).toBe(true);
+    expect(beatLinked(Date.now())).toBe(true);
+    expect(beatLinked(undefined)).toBe(true);
+    expect(beatLinked("not json")).toBe(true);
   });
 });
 
@@ -136,5 +158,21 @@ describe("handleReveal", () => {
     expect(r.sendRevealDone).toHaveBeenCalledWith("a", "moved");
     expect(r.sendRevealFailed).toHaveBeenCalledWith("b", "gone");
     expect(r.sendRevealFailed).toHaveBeenCalledWith("c", "boom");
+  });
+});
+
+describe("handleOpenProject", () => {
+  const reply = () => {
+    const sent: unknown[] = [];
+    return { sent, sendOpenDone: (id: string) => sent.push(["done", id]), sendOpenFailed: (id: string, m: string, c?: boolean) => sent.push(["failed", id, m, !!c]) };
+  };
+  it("reports success, a cancelled prompt and errors", async () => {
+    const r = reply();
+    await handleOpenProject("a", "/p.aep", async () => ({ ok: true, cancelled: false, message: "" }), r);
+    await handleOpenProject("b", "/p.aep", async () => ({ ok: false, cancelled: true, message: "Kept" }), r);
+    await handleOpenProject("c", "/p.aep", async () => {
+      throw new Error("boom");
+    }, r);
+    expect(r.sent).toEqual([["done", "a"], ["failed", "b", "Kept", true], ["failed", "c", "boom", false]]);
   });
 });

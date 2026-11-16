@@ -6,6 +6,8 @@
 //! * Discovery scans the project folder (not just `01 AE Workfile`) so imported
 //!   projects with their own layout work too. Hidden folders and After Effects
 //!   auto-save folders are skipped, symlinks are not followed.
+//! * `.aep` files inside `02 Assets` are templates and other imported projects, not versions of this one, so they
+//!   aren't listed (the Assets tab shows them). The one exception is a file there that was marked as current.
 //! * The current AEP is never guessed. It is whatever the user marked, stored
 //!   as a path relative to the project folder.
 
@@ -23,6 +25,8 @@ const MAX_FILES: usize = 1000;
 const MAX_DEPTH: usize = 5;
 const WORKFILES_JSON: &str = ".murre/workfiles.json";
 const MAX_NOTE_CHARS: usize = 280;
+/// The project's assets folder. Its `.aep` files are templates, not workfiles.
+const ASSETS_DIR: &str = "02 Assets";
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -170,6 +174,9 @@ fn walk(
         let Ok(ft) = entry.file_type() else { continue };
         let path = entry.path();
         if ft.is_dir() {
+            if depth == 0 && name.eq_ignore_ascii_case(ASSETS_DIR) {
+                continue;
+            }
             if depth < MAX_DEPTH && !skip_dir(&name) {
                 walk(root, &path, depth + 1, out, truncated);
             }
@@ -234,6 +241,18 @@ pub fn scan(root: &Path) -> AppResult<WorkfileScan> {
 
     let state = read_state(root)?;
     let current = current_from_state(&state);
+    // A file in the assets folder that was marked as current stays listed, so the mark never silently disappears.
+    if let Some((rel, _)) = &current {
+        let path = root.join(rel);
+        let in_assets = Path::new(rel).components().next().is_some_and(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(ASSETS_DIR));
+        if in_assets
+            && resolve_workfile(root, rel).is_ok()
+            && !found.iter().any(|(p, _)| *p == path)
+            && let Ok(meta) = fs::metadata(&path)
+        {
+            found.push((path, meta));
+        }
+    }
 
     struct Row {
         wf: Workfile,
@@ -486,6 +505,39 @@ mod tests {
         assert_eq!(by("misc/Loose.AEP").size_bytes, 3);
         assert!(!s.truncated);
         assert_eq!(s.current_aep, None);
+    }
+
+    #[test]
+    fn templates_in_the_assets_folder_are_not_versions() {
+        let d = project();
+        let r = d.path();
+        touch(&r.join("01 AE Workfile/Film_v1.aep"), 100);
+        touch(&r.join("02 Assets/05 Templates/Paper Transition/Paper Transition.aep"), 900);
+        touch(&r.join("02 assets/Other.aep"), 900);
+        touch(&r.join("Loose.aep"), 50);
+        let s = scan(r).unwrap();
+        let names: Vec<_> = s.workfiles.iter().map(|w| w.path.as_str()).collect();
+        assert_eq!(names, ["01 AE Workfile/Film_v1.aep", "Loose.aep"]);
+        // Nothing marked: Open in After Effects picks the newest listed file, never the newer template.
+        assert_eq!(crate::open_ae::pick(&s).map(|w| w.path.as_str()), Some("01 AE Workfile/Film_v1.aep"));
+    }
+
+    #[test]
+    fn a_template_marked_as_current_stays_listed() {
+        let d = project();
+        let r = d.path();
+        touch(&r.join("01 AE Workfile/Film_v1.aep"), 100);
+        let t = "02 Assets/05 Templates/Paper.aep";
+        touch(&r.join(t), 50);
+        std::fs::write(
+            r.join(WORKFILES_JSON),
+            serde_json::json!({ "schemaVersion": 1, "currentAep": { "path": t, "markedAt": 5 } }).to_string(),
+        )
+        .unwrap();
+        let s = scan(r).unwrap();
+        let w = s.workfiles.iter().find(|w| w.path == t).expect("the marked template is listed");
+        assert!(w.is_current);
+        assert_eq!(s.workfiles.len(), 2);
     }
 
     #[test]

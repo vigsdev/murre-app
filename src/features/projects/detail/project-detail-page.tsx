@@ -60,7 +60,7 @@ export function ProjectDetailPage() {
   stateRef.current = state
   const openAe = useOpenInAfterEffects(id)
   // Bumped when files change on disk, so tabs re-read their data in place.
-  const [tokens, setTokens] = useState({ colors: 0, expressions: 0, fonts: 0, environment: 0, comps: 0, footage: 0, files: 0 })
+  const [tokens, setTokens] = useState({ colors: 0, expressions: 0, fonts: 0, environment: 0, comps: 0, footage: 0, tasks: 0, files: 0 })
   const { rescan } = useSync()
   const [packaging, setPackaging] = useState(false)
   // `?package=1` comes from the Companion panel's Package button.
@@ -153,6 +153,8 @@ export function ProjectDetailPage() {
       environment: t.environment + (change.metadata.includes("environment.json") ? 1 : 0),
       comps: t.comps + (change.metadata.includes("comps.json") ? 1 : 0),
       footage: t.footage + (change.metadata.includes("assets.json") ? 1 : 0),
+      // Ticked in After Effects' Murre To-do panel.
+      tasks: t.tasks + (change.metadata.includes("tasks.json") ? 1 : 0),
       files: t.files + (change.files ? 1 : 0),
     }))
     // The folder itself moved or vanished: let the app re-check its projects.
@@ -252,7 +254,7 @@ export function ProjectDetailPage() {
               </div>
             </div>
             <TabsContent value="project" className="pt-5 not-[[hidden]]:flex not-[[hidden]]:flex-col">
-              <ProjectTab project={project} reloadToken={tokens.files} needsToken={tokens.fonts + tokens.environment} openAe={openAe} />
+              <ProjectTab project={project} reloadToken={tokens.files} needsToken={tokens.fonts + tokens.environment} tasksToken={tokens.tasks} openAe={openAe} />
             </TabsContent>
             <TabsContent value="assets" className="pt-5">
               <AssetsTab project={project} reloadToken={tokens.files} footageToken={tokens.footage} />

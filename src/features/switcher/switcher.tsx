@@ -26,7 +26,7 @@ const PAGES: { label: string; path: string; icon: LucideIcon }[] = [
   { label: "Projects", path: "/projects", icon: FolderKanban },
   { label: "Notes", path: "/notes", icon: FileText },
   { label: "Calendar", path: "/calendar", icon: Calendar },
-  { label: "Referenxe", path: "/referenxe", icon: PenTool },
+  { label: "Moodboard", path: "/moodboard", icon: PenTool },
   { label: "Settings", path: "/settings", icon: Settings },
 ]
 

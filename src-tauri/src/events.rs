@@ -143,6 +143,7 @@ pub fn update(conn: &Connection, id: &str, input: &EventInput) -> AppResult<Even
 }
 
 /// Every event, oldest first (for showing them in Apple Calendar).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn all(conn: &Connection) -> AppResult<Vec<Event>> {
     let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM events ORDER BY date, created_at, id LIMIT ?1"))?;
     let rows = stmt.query_map([MAX_EVENTS], row)?.collect::<Result<Vec<_>, _>>()?;

@@ -22,6 +22,9 @@ export interface Item {
   text?: string
   fontSize?: number
   url?: string
+  /** Link cards: the page's title and site name from its preview (the picture is `file`). */
+  title?: string
+  site?: string
   /**
    * Lines and arrows run corner to corner of their box. By default from the top left to the bottom right; these
    * turn either end around. For an arrow the head is at the end.
@@ -116,6 +119,8 @@ export function parseBoard(raw: unknown): Board | null {
     if (typeof o.text === "string") item.text = o.text
     if (finite(o.fontSize)) item.fontSize = o.fontSize
     if (typeof o.url === "string") item.url = o.url
+    if (typeof o.title === "string") item.title = o.title.slice(0, 200)
+    if (typeof o.site === "string") item.site = o.site.slice(0, 200)
     if (o.flipX === true) item.flipX = true
     if (o.flipY === true) item.flipY = true
     if (isHexColor(o.color)) item.color = o.color

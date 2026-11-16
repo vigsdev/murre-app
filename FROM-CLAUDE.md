@@ -201,7 +201,7 @@ What I expect from each, so a different result is worth reporting:
 
 Murre uses the `motion` package for movement that CSS can't do well. Timings and easings live in `src/lib/motion.ts`; use those instead of new numbers. `MotionConfig reducedMotion="user"` in `main.tsx` turns movement off for anyone with Reduce Motion on.
 
-Where it is used: the tab underline (Base UI's own indicator, CSS), the sidebar highlight sliding between Home, Projects, Notes, Calendar and Referenxe, cards on the Projects grid fading in, gliding and fading out, and kanban cards gliding into place. Kanban cards do not fade: dnd-kit hides the dropped card while its drop animation plays and then restores it, which left a moved card invisible when it also had a fade of its own.
+Where it is used: the tab underline (Base UI's own indicator, CSS), the sidebar highlight sliding between Home, Projects, Notes, Calendar and Moodboard, cards on the Projects grid fading in, gliding and fading out, and kanban cards gliding into place. Kanban cards do not fade: dnd-kit hides the dropped card while its drop animation plays and then restores it, which left a moved card invisible when it also had a fade of its own.
 
 Known limits: only checked in a browser, not in the app. Settings and Help in the sidebar footer keep a plain highlight. Cards leaving a list finish their quick fade before the others close the gap. Run `npm install` after pulling this, since it adds a package.
 
@@ -215,7 +215,7 @@ Tried, without success: keeping the same grid and cell elements when the month c
 
 Next things to look at: the swipe lock in `onWheel` in `calendar-page.tsx` (`lockedUntil` keeps extending while the trackpad's coasting events arrive, and may never expire on a real trackpad), and whether the Tauri webview handles the gesture differently from a browser. Logging `deltaX` and `timeStamp` from a real swipe would show which.
 
-## Shapes on the Referenxe board
+## Shapes on the Moodboard
 
 The board has four shapes: rectangle, ellipse, line and arrow. They are added from the shapes button at the bottom of the board (no drawing tool, no shortcut yet) and appear in the middle of the view, selected.
 
@@ -233,7 +233,7 @@ To make a release: `npm run bundle:signed` in `murre-ae` (builds, signs with the
 
 Not checked on a real Mac: that After Effects accepts the self-signed package with `PlayerDebugMode` off. Turn it off first to test (`defaults delete com.adobe.CSXS.12 PlayerDebugMode`, repeat for 9 to 13), remove the installed `com.murre.cep` folder, install from the app, restart After Effects. If the panel does not load, the signature is the first suspect.
 
-The package contains a `.debug` file that opens remote-debugging ports (8860, 8861) for the panel. Fine while developing; for a release, turn the debug file off in the Companion's build config and sign again.
+The package contains a `.debug` file that opens remote-debugging ports (8970 and up, one per panel). Fine while developing; for a release, turn the debug file off in the Companion's build config and sign again.
 
 Settings > After Effects Companion has a checkbox, "Companion not showing up?", that turns `PlayerDebugMode` on or off for CSXS 9 to 13 (turning it off removes the setting). It is a system-wide Adobe setting: it lets After Effects load every panel it can't verify, not only Murre. It shows as on only when all five versions are on. After a change the row says to restart After Effects. Mac only; elsewhere it reads as off and does nothing.
 
@@ -283,12 +283,12 @@ Settings > After Effects Companion has a checkbox, "Companion not showing up?", 
 - Not checked on a real Mac: how the Beta's application path and version look from CEP. The name is "After Effects <year from version>", plus " Beta" if the path contains "Beta". If the Beta reports something else, the label will just read "After Effects 2026" for both; the two are still told apart by path.
 - The Companion has to be rebuilt and reinstalled (Settings → Companion) for it to send the host. An old Companion still works: with no host it counts as one "unknown" After Effects, so two old ones would replace each other as before.
 
-## Dropping files on the Referenxe board
+## Dropping files on the Moodboard
 
 - Tauri turns on its own file-drop handling for a window by default, and on macOS that stops the page from seeing dropped files at all. The window now has `dragDropEnabled: false` (`tauri.conf.json`), so the board's normal drop handler gets them. `main.tsx` also stops a file dropped outside the board from opening in the window.
 - Not run in the real app. Needs a full restart of `tauri dev` (the config is read at start).
 
-## Shape color and line (Referenxe)
+## Shape color and line (Moodboard)
 
 - Select a shape and use the brush button in the toolbar: line color, fill (rectangles and ellipses), thickness (thin to heavy) and line style (solid, dashed, dotted). It works on several shapes at once; "default" goes back to the text color and no fill.
 - Saved on each item as `color`, `fill` (`#rrggbb`), `stroke` and `dash`; older boards open as before. A filled shape can be picked up by its inside.
@@ -309,7 +309,7 @@ Settings > After Effects Companion has a checkbox, "Companion not showing up?", 
 - LGPL: `THIRD-PARTY.md` has the notice and says how the build is made again. Don't use the common "static ffmpeg" downloads for this: most are GPL builds.
 - Not verified: the script itself (can't run macOS builds here, only `bash -n`), and that `tauri dev` copies the sidecars next to the dev program (it should; if thumbnails still say "wouldn't start" in dev, run the script and restart).
 
-## SVG icons on the Referenxe board
+## SVG icons on the Moodboard
 
 - SVG files can be added to the board (drop, paste or "Add file"). They are stored as they are in `.murre/references/media/` and shown through an `<img>`, which never runs scripts; they are never opened as a page. A file counts as SVG only if it starts with an `<svg` element (after an optional XML line, comments and doctype) and is closed. New SVGs start 200 px on the long side, since icons are often 24 px.
 - Right-click an SVG: "Send to After Effects as shapes" (imports it, then runs Layer > Create > Create Shapes from Vector Layer, and switches the original vector layer off so nothing is lost) or "as a layer" (plain footage layer, as for any image).

@@ -2321,7 +2321,9 @@ dependencies = [
  "objc2",
  "objc2-event-kit",
  "objc2-foundation",
+ "reqwest",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",
@@ -2329,11 +2331,13 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tempfile",
  "tungstenite",
  "uuid",
  "window-vibrancy",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
@@ -4260,6 +4264,22 @@ dependencies = [
  "thiserror 2.0.21",
  "url",
  "windows",
+ "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-single-instance"
+version = "2.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "726b6da0dd5bd1344f84f4108a622c07d01923baacb5c803a605189672c5352f"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
  "zbus",
 ]
 

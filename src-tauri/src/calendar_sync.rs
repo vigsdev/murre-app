@@ -6,6 +6,8 @@
 //!
 //! This file decides what should be in the calendar and what to change. `calendar_mac` does the talking to
 //! Apple's EventKit. On other systems the feature reports itself as unsupported.
+// Only the Mac talks to Apple Calendar, so elsewhere most of this is unused (the tests still run everywhere).
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
 use crate::error::AppResult;
 use crate::project::Status;

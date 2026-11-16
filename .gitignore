@@ -4,4 +4,5 @@ src-tauri/target
 *.tsbuildinfo
 src-tauri/binaries
 .ffmpeg-build
+.ffmpeg-build-windows
 .DS_Store

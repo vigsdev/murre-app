@@ -558,7 +558,11 @@ pub fn make_zip(src: &Path, out: &Path) -> AppResult<()> {
     let status = if cfg!(target_os = "macos") {
         crate::platform::command("/usr/bin/ditto").arg("-c").arg("-k").arg("--keepParent").arg(src).arg(out).status()
     } else if cfg!(windows) {
-        return invalid("Making a zip isn’t available on Windows yet. The folder is still there.");
+        let made = zip_folder(src, out);
+        if made.is_err() {
+            let _ = fs::remove_file(out);
+        }
+        return made.map_err(|_| AppError::Invalid("The zip couldn't be made. The folder is still there.".into()));
     } else {
         crate::platform::command("zip").arg("-rq").arg(out).arg(name).current_dir(parent).status()
     };
@@ -569,6 +573,38 @@ pub fn make_zip(src: &Path, out: &Path) -> AppResult<()> {
             invalid("The zip couldn't be made. The folder is still there.")
         }
     }
+}
+
+/// Zips the folder `src` into `out` with the folder itself at the top, the way the Mac's `ditto --keepParent` does.
+/// Used on Windows, which has no zip command to rely on. Links are skipped, like everywhere else in Murre.
+fn zip_folder(src: &Path, out: &Path) -> std::io::Result<()> {
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    fn add(z: &mut zip::ZipWriter<fs::File>, dir: &Path, prefix: &str) -> std::io::Result<()> {
+        let mut entries: Vec<_> = fs::read_dir(dir)?.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for e in entries {
+            let ft = e.file_type()?;
+            let name = format!("{prefix}/{}", e.file_name().to_string_lossy());
+            if ft.is_dir() {
+                z.add_directory(name.as_str(), SimpleFileOptions::default()).map_err(std::io::Error::other)?;
+                add(z, &e.path(), &name)?;
+            } else if ft.is_file() {
+                let size = e.metadata()?.len();
+                let options = SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated)
+                    .large_file(size >= u32::MAX as u64);
+                z.start_file(name.as_str(), options).map_err(std::io::Error::other)?;
+                std::io::copy(&mut fs::File::open(e.path())?, z)?;
+            }
+        }
+        Ok(())
+    }
+    let top = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Package".into());
+    let mut z = zip::ZipWriter::new(fs::File::create(out)?);
+    z.add_directory(top.as_str(), SimpleFileOptions::default()).map_err(std::io::Error::other)?;
+    add(&mut z, src, &top)?;
+    z.finish().map_err(std::io::Error::other)?.flush()
 }
 
 /// Make the package. Refuses when there is no workfile, or when footage is missing or outside the project and
@@ -656,6 +692,24 @@ pub fn build(root: &Path, name: &str, opts: &BuildOptions, progress: &mut dyn Fn
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_windows_zip_keeps_the_folder_at_the_top() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("Film package");
+        fs::create_dir_all(src.join("01 AE Workfile")).unwrap();
+        fs::write(src.join("01 AE Workfile/Film.aep"), b"aep").unwrap();
+        fs::write(src.join("readme.txt"), b"hi").unwrap();
+        let out = d.path().join("Film package.zip");
+        zip_folder(&src, &out).unwrap();
+        let mut a = zip::ZipArchive::new(fs::File::open(&out).unwrap()).unwrap();
+        let mut names: Vec<String> = (0..a.len()).map(|i| a.by_index(i).unwrap().name().unwrap().to_string()).collect();
+        names.sort();
+        assert_eq!(names, ["Film package/", "Film package/01 AE Workfile/", "Film package/01 AE Workfile/Film.aep", "Film package/readme.txt"]);
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut a.by_name("Film package/readme.txt").unwrap(), &mut text).unwrap();
+        assert_eq!(text, "hi");
+    }
     use serde_json::json;
 
     fn write(p: &Path, bytes: &[u8]) {

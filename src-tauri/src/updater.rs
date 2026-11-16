@@ -5,7 +5,8 @@
 //! dialogs are native, so there is no page to build.
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
@@ -19,6 +20,38 @@ const DAILY: Duration = Duration::from_secs(24 * 60 * 60);
 static READY: AtomicBool = AtomicBool::new(false);
 /// A check or a prompt is already open.
 static BUSY: AtomicBool = AtomicBool::new(false);
+/// Someone pressed "Check for updates" while a quiet check was already running: that check then answers out loud.
+static ASKED: AtomicBool = AtomicBool::new(false);
+/// The feed is being read right now (as opposed to the "Update ready" prompt being open, or a download).
+static CHECKING: AtomicBool = AtomicBool::new(false);
+/// What the updater is doing, for the window to show (see `Progress`).
+static PROGRESS: Mutex<Progress> = Mutex::new(Progress::Idle);
+
+/// Sent to the window as `update-progress` while there is something to show, so a slow GitHub doesn't look like nothing happened.
+/// A quiet check that nobody asked for stays `Idle`.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "stage", rename_all = "camelCase")]
+pub enum Progress {
+    Idle,
+    Checking,
+    Downloading { version: String, done: u64, total: Option<u64> },
+    Installing { version: String },
+}
+
+/// What the updater is doing right now (the Settings button asks when it opens).
+pub fn progress() -> Progress {
+    PROGRESS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn set_progress(app: &AppHandle, p: Progress) {
+    *PROGRESS.lock().unwrap_or_else(|e| e.into_inner()) = p.clone();
+    let _ = app.emit("update-progress", p);
+}
+
+/// Whole percent of a download, when its size is known.
+fn percent(done: u64, total: Option<u64>) -> Option<u64> {
+    total.filter(|t| *t > 0).map(|t| (done.min(t) * 100) / t)
+}
 
 /// Starts the updater plugin. A build with no feed configured is normal, so a failure is only logged.
 pub fn register(app: &AppHandle) {
@@ -134,13 +167,28 @@ pub fn check(app: AppHandle, manual: bool) {
         return;
     }
     if BUSY.swap(true, Ordering::SeqCst) {
+        // Already checking, asking or downloading. Don't drop the click: the running check answers it, and the window
+        // shows how far along things are.
+        if manual && CHECKING.load(Ordering::SeqCst) {
+            ASKED.store(true, Ordering::SeqCst);
+            set_progress(&app, Progress::Checking);
+        } else if manual {
+            set_progress(&app, progress());
+        }
         return;
     }
+    if manual {
+        set_progress(&app, Progress::Checking);
+    }
+    CHECKING.store(true, Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
         let found = match app.updater() {
             Ok(u) => u.check().await,
             Err(e) => Err(e),
         };
+        CHECKING.store(false, Ordering::SeqCst);
+        let manual = manual || ASKED.swap(false, Ordering::SeqCst);
+        set_progress(&app, Progress::Idle);
         match found {
             Ok(Some(update)) => {
                 let version = update.version.clone();
@@ -206,7 +254,24 @@ async fn install_update(app: AppHandle, update: tauri_plugin_updater::Update) {
     let _ = app.emit("flush-before-restart", ());
     tokio_sleep(Duration::from_millis(1200)).await;
 
-    let result = update.download_and_install(|_, _| {}, || {}).await;
+    let version = update.version.clone();
+    set_progress(&app, Progress::Downloading { version: version.clone(), done: 0, total: None });
+    let (mut done, mut shown, mut last) = (0u64, None::<u64>, Instant::now());
+    let result = update
+        .download_and_install(
+            |chunk, total| {
+                done += chunk as u64;
+                // Often enough to look alive, not so often that the window does nothing but listen.
+                let pct = percent(done, total);
+                if pct != shown || last.elapsed() > Duration::from_millis(500) {
+                    shown = pct;
+                    last = Instant::now();
+                    set_progress(&app, Progress::Downloading { version: version.clone(), done, total });
+                }
+            },
+            || set_progress(&app, Progress::Installing { version: version.clone() }),
+        )
+        .await;
     match result {
         Ok(()) => {
             if let Some(p) = dismissed_path(&app) {
@@ -217,6 +282,7 @@ async fn install_update(app: AppHandle, update: tauri_plugin_updater::Update) {
         }
         Err(e) => {
             BUSY.store(false, Ordering::SeqCst);
+            set_progress(&app, Progress::Idle);
             applog::warn("updater", &format!("Update failed: {e}"));
             dialog(&app, MessageDialogKind::Error, "Murre", install_failed_text(&e)).show(|_| {});
         }
@@ -247,6 +313,21 @@ mod tests {
         let bad_sig = install_failed_text(&E::SignatureUtf8("x".into()));
         assert!(bad_sig.starts_with("The update didn’t install. Your current Murre is untouched.") && bad_sig.contains("safety check"));
         assert!(install_failed_text(&E::Network("reset".into())).contains("download stopped"));
+    }
+
+    #[test]
+    fn download_percent() {
+        assert_eq!(percent(0, None), None);
+        assert_eq!(percent(5, Some(0)), None);
+        assert_eq!(percent(25, Some(100)), Some(25));
+        assert_eq!(percent(150, Some(100)), Some(100));
+    }
+
+    #[test]
+    fn progress_is_sent_in_the_shape_the_window_reads() {
+        let p = Progress::Downloading { version: "0.2.0".into(), done: 10, total: Some(40) };
+        assert_eq!(serde_json::to_value(p).unwrap(), serde_json::json!({"stage": "downloading", "version": "0.2.0", "done": 10, "total": 40}));
+        assert_eq!(serde_json::to_value(Progress::Idle).unwrap(), serde_json::json!({"stage": "idle"}));
     }
 
     #[test]

@@ -33,6 +33,7 @@ mod versions;
 mod ae_project;
 mod companion_install;
 mod render_job;
+mod link_preview;
 mod references;
 mod renders;
 mod safe_fs;
@@ -184,6 +185,12 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
 #[tauri::command]
 fn check_for_updates(app: tauri::AppHandle) {
     updater::check(app, true);
+}
+
+/// What the updater is doing right now; changes arrive as `update-progress` events.
+#[tauri::command]
+fn update_progress() -> updater::Progress {
+    updater::progress()
 }
 
 pub struct AppState {
@@ -998,6 +1005,66 @@ async fn check_after_effects(app: tauri::AppHandle) -> AppResult<AeCheck> {
 /// There is no fixed time limit while After Effects is open, because it may be waiting at a dialog: progress goes to
 /// the app as `starter-progress` events (see `starter_wait`), and the person can cancel, bring After Effects forward,
 /// or open it themselves when Murre couldn't.
+/// Starts After Effects when it isn't running and waits until the Companion connects, which only happens once After
+/// Effects has finished starting and any startup message is answered. Each stage goes to `show`. `ask` (Murre gave up
+/// and the person should open it) and `launched_once` carry over when the caller comes round again after After
+/// Effects closed. Returns false when the person pressed Cancel.
+fn wait_for_companion(
+    state: &AppState,
+    bridge: &bridge::Bridge,
+    aerender_path: Option<&str>,
+    saved: Option<&str>,
+    ask: &mut Option<starter_wait::Reason>,
+    launched_once: &mut bool,
+    show: &mut dyn FnMut(starter_wait::Stage),
+) -> bool {
+    use starter_wait::{Reason, Stage, Wait};
+    use std::time::{Duration, Instant};
+    let tick = Duration::from_millis(250);
+    let mut launched = false;
+    if ask.is_none() && !*launched_once && !open_ae::is_running() {
+        *launched_once = true;
+        let chosen = open_ae::choose_app(aerender_path, saved, &aerender::detect()).ok().flatten();
+        match chosen.map(|ae| open_ae::launch(&ae)) {
+            Some(Ok(())) => launched = true,
+            _ => *ask = Some(Reason::LaunchFailed),
+        }
+    }
+    let mut started = Instant::now();
+    let mut seen_running = false;
+    let mut last_look = Instant::now() - Duration::from_secs(5);
+    while !bridge.is_connected() {
+        if state.starter.cancelled() {
+            return false;
+        }
+        if let Some(reason) = *ask {
+            show(Stage::OpenYourself { reason });
+            if state.starter.take_opened() {
+                *ask = None;
+                // Give it the same time to appear as one Murre started itself.
+                launched = true;
+                started = Instant::now();
+                seen_running = false;
+                last_look = Instant::now() - Duration::from_secs(5);
+            }
+            std::thread::sleep(tick);
+            continue;
+        }
+        // Looking at the running programs once a second is plenty.
+        if last_look.elapsed() >= Duration::from_secs(1) {
+            last_look = Instant::now();
+            let running = open_ae::is_running();
+            seen_running |= running;
+            match starter_wait::connect_wait(started.elapsed(), launched, seen_running, running) {
+                Wait::Show(stage) => show(stage),
+                Wait::Ask(reason) => *ask = Some(reason),
+            }
+        }
+        std::thread::sleep(tick);
+    }
+    true
+}
+
 #[tauri::command]
 async fn create_starter_in_after_effects(
     app: tauri::AppHandle,
@@ -1006,7 +1073,7 @@ async fn create_starter_in_after_effects(
     already_asked: Option<bool>,
 ) -> AppResult<ae_project::CreateOutcome> {
     tauri::async_runtime::spawn_blocking(move || {
-        use starter_wait::{Reason, Stage, Wait};
+        use starter_wait::{Reason, Stage};
         use std::time::{Duration, Instant};
         let state = app.state::<AppState>();
         let Some(_running) = state.starter.begin() else {
@@ -1052,46 +1119,8 @@ async fn create_starter_in_after_effects(
             // 1. Wait for After Effects and the Companion.
             if !bridge.is_connected() {
                 check_first = true;
-                let mut launched = false;
-                if ask.is_none() && !launched_once && !open_ae::is_running() {
-                    launched_once = true;
-                    let chosen = open_ae::choose_app(aerender_path.as_deref(), saved.as_deref(), &aerender::detect()).ok().flatten();
-                    match chosen.map(|ae| open_ae::launch(&ae)) {
-                        Some(Ok(())) => launched = true,
-                        _ => ask = Some(Reason::LaunchFailed),
-                    }
-                }
-                let mut started = Instant::now();
-                let mut seen_running = false;
-                let mut last_look = Instant::now() - Duration::from_secs(5);
-                while !bridge.is_connected() {
-                    if state.starter.cancelled() {
-                        return cancelled(None);
-                    }
-                    if let Some(reason) = ask {
-                        show(Stage::OpenYourself { reason });
-                        if state.starter.take_opened() {
-                            ask = None;
-                            // Give it the same time to appear as one Murre started itself.
-                            launched = true;
-                            started = Instant::now();
-                            seen_running = false;
-                            last_look = Instant::now() - Duration::from_secs(5);
-                        }
-                        std::thread::sleep(tick);
-                        continue;
-                    }
-                    // `ps` once a second is plenty.
-                    if last_look.elapsed() >= Duration::from_secs(1) {
-                        last_look = Instant::now();
-                        let running = open_ae::is_running();
-                        seen_running |= running;
-                        match starter_wait::connect_wait(started.elapsed(), launched, seen_running, running) {
-                            Wait::Show(stage) => show(stage),
-                            Wait::Ask(reason) => ask = Some(reason),
-                        }
-                    }
-                    std::thread::sleep(tick);
+                if !wait_for_companion(&state, bridge, aerender_path.as_deref(), saved.as_deref(), &mut ask, &mut launched_once, &mut show) {
+                    return cancelled(None);
                 }
             }
 
@@ -1220,17 +1249,35 @@ async fn show_after_effects(app: tauri::AppHandle, aerender_path: Option<String>
     .map_err(|e| error::AppError::Invalid(e.to_string()))?
 }
 
+/// How "Open in After Effects" ended.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenOutcome {
+    /// The file, relative to the project folder.
+    path: String,
+    /// Nothing was opened: Cancel was pressed in Murre or in After Effects' "save changes?" prompt.
+    cancelled: bool,
+    message: Option<String>,
+}
+
 /// Open a project's `.aep` in After Effects. `path` is relative to the project folder; without it the
-/// current (or highest-version) file is used. `app` is an `aerender` path from `get_aerender_status`
-/// that picks the After Effects version; without it the newest install is used.
+/// current (or highest-version) file is used. `aerender_path` picks the After Effects version; without it the newest
+/// install is used.
+///
+/// With the Companion installed, Murre starts After Effects if needed, waits until the Companion says hello (After
+/// Effects has finished starting and any startup message is answered), then asks it to open the file. Handing the
+/// file to the system like a double-click gets lost when After Effects shows a message as it starts. Progress goes
+/// out as `open-progress` events, with the same stages as creating a project file.
 #[tauri::command]
 async fn open_in_after_effects(
     app: tauri::AppHandle,
     project_id: String,
     path: Option<String>,
     aerender_path: Option<String>,
-) -> AppResult<String> {
+) -> AppResult<OpenOutcome> {
     tauri::async_runtime::spawn_blocking(move || {
+        use starter_wait::Reason;
+        use std::time::{Duration, Instant};
         let state = app.state::<AppState>();
         let (root, saved) = {
             let conn = state.db.lock().unwrap_or_else(|e| e.into_inner());
@@ -1246,9 +1293,64 @@ async fn open_in_after_effects(
                 }
             }
         };
-        let chosen = open_ae::choose_app(aerender_path.as_deref(), saved.as_deref(), &aerender::detect())?;
-        open_ae::open(&root, &rel, chosen.as_deref())?;
-        Ok(rel)
+        let target = open_ae::aep_target(&root, &rel)?;
+        let file = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| rel.clone());
+        let done = |cancelled: bool, message: Option<String>| Ok(OpenOutcome { path: rel.clone(), cancelled, message });
+
+        // Without the Companion (or with one too old to open projects) there's nothing to wait for: hand the file over as before.
+        let installed = companion_target(&app).map(|t| companion_install::opens_projects(&t)).unwrap_or(false);
+        let bridge = match state.bridge.as_ref() {
+            Some(b) if installed => b,
+            _ => {
+                let chosen = open_ae::choose_app(aerender_path.as_deref(), saved.as_deref(), &aerender::detect())?;
+                open_ae::open(&root, &rel, chosen.as_deref())?;
+                return done(false, None);
+            }
+        };
+        let Some(_running) = state.starter.begin() else {
+            return Err(error::AppError::Invalid("Murre is already waiting for After Effects. Finish or cancel that first.".into()));
+        };
+        let mut shown: Option<starter_wait::Stage> = None;
+        let mut show = |stage: starter_wait::Stage| {
+            if shown.as_ref() != Some(&stage) {
+                let _ = app.emit("open-progress", &stage);
+                shown = Some(stage);
+            }
+        };
+        let stopped = || done(true, Some("Stopped. After Effects was left as it is.".into()));
+        let mut ask: Option<Reason> = None;
+        let mut launched_once = false;
+        loop {
+            if !bridge.is_connected()
+                && !wait_for_companion(&state, bridge, aerender_path.as_deref(), saved.as_deref(), &mut ask, &mut launched_once, &mut show)
+            {
+                return stopped();
+            }
+            let request_id = uuid::Uuid::new_v4().simple().to_string();
+            bridge.request_open_project(&request_id, &target.to_string_lossy())?;
+            let asked = Instant::now();
+            loop {
+                if let Some(r) = bridge.status().open.filter(|r| r.request_id == request_id) {
+                    return if r.ok {
+                        done(false, None)
+                    } else if r.cancelled {
+                        done(true, r.message)
+                    } else {
+                        Err(error::AppError::Invalid(r.message.unwrap_or_else(|| "After Effects couldn’t open the project.".into())))
+                    };
+                }
+                if state.starter.cancelled() {
+                    return done(true, Some("Stopped waiting. After Effects may still open the project.".into()));
+                }
+                // After Effects quit or crashed before answering: start over, asking the person to open it.
+                if !bridge.is_connected() {
+                    ask = Some(Reason::Closed);
+                    break;
+                }
+                show(starter_wait::open_wait(asked.elapsed(), &file));
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        }
     })
     .await
     .map_err(|e| error::AppError::Invalid(e.to_string()))?
@@ -1548,6 +1650,18 @@ async fn save_references(
 ) -> AppResult<references::ReferencesView> {
     let root = scope_root(&state, &project_id)?;
     references::save(&root, canvas, expected_revision)
+}
+
+/// Fetches a link's title and preview picture for its card on a reference board (`project_id` `None`: the global board).
+/// The picture is saved in that board's media folder.
+#[tauri::command]
+async fn fetch_link_preview(
+    state: State<'_, AppState>,
+    project_id: Option<String>,
+    url: String,
+) -> AppResult<link_preview::LinkPreview> {
+    let root = scope_root(&state, &project_id)?;
+    link_preview::fetch(&root, &url).await
 }
 
 /// `data_base64`: the file's bytes. Copied into the project's reference media folder.
@@ -1889,7 +2003,17 @@ fn get_render_log(state: State<'_, AppState>, lines: usize) -> Vec<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows: opening Murre again (Start menu, desktop, the Companion's Murre button) while it already runs shows the
+    // running window instead of starting a second copy that would fight over the Companion link and the database.
+    // It has to be the first plugin. macOS does this by itself.
+    #[cfg(windows)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        if !args.iter().any(|a| a == startup::HIDDEN_ARG) {
+            show_main(app);
+        }
+    }));
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         // The login item starts the app with `--hidden`, so it waits quietly in the menu bar instead of opening a window.
@@ -1926,6 +2050,15 @@ pub fn run() {
             paths.ensure()?;
             applog::init(&paths.root.join("logs"));
             applog::info("app", &format!("Started version {}", env!("CARGO_PKG_VERSION")));
+            // Windows: tell the Companion where Murre is installed, so its Murre button can start the app when it
+            // isn't running (on macOS it asks the system by the app's identifier instead).
+            #[cfg(windows)]
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = safe_fs::atomic_write(
+                    &paths.root.join("app-location.json"),
+                    serde_json::json!({ "v": 1, "path": exe }).to_string().as_bytes(),
+                );
+            }
             let conn = db::open(&paths.database)?;
             let handle = app.handle().clone();
             // The app works without the live link, so a failure here is not fatal.
@@ -2031,6 +2164,7 @@ pub fn run() {
             starter_answer,
             show_after_effects,
             check_for_updates,
+            update_progress,
             get_profile,
             save_profile,
             create_project,
@@ -2127,6 +2261,7 @@ pub fn run() {
             get_references,
             save_references,
             import_reference_media,
+            fetch_link_preview,
             reference_media_path,
             open_reference_media
         ])

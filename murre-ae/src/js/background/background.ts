@@ -7,7 +7,7 @@
 import { initBolt, csi, evalTS } from "../lib/utils/bolt";
 import { createBridge, messageOf } from "../main/create-bridge";
 import { host, trash } from "../main/host";
-import { handleCreateStarter, handleImportImage, handleReveal, handleSaveAs, handleInspect, backgroundShouldConnect, PANEL_BEAT_EVENT } from "../lib/murre/starter-flow";
+import { handleCreateStarter, handleImportImage, handleOpenProject, handleReveal, handleSaveAs, handleInspect, backgroundShouldConnect, beatLinked, PANEL_BEAT_EVENT, PANEL_BYE_EVENT } from "../lib/murre/starter-flow";
 import type { AppCommand, BridgeClient, PanelStateMsg } from "../lib/murre/bridge-client";
 import { cepIo } from "../lib/murre/io";
 import { findProject } from "../lib/murre/project-link";
@@ -17,6 +17,8 @@ import { runRelink } from "../lib/murre/assets-flow";
 initBolt();
 
 let lastBeat: number | null = null;
+/** Since when the open panel has said it has no app link (null while it has one, or no panel is open). */
+let unlinkedSince: number | null = null;
 let client: BridgeClient | null = null;
 let busy: "scan" | "relink" | null = null;
 let cancelRequested = false;
@@ -99,6 +101,9 @@ async function onCommand(cmd: AppCommand) {
   if (!c) return;
   if (cmd.kind === "inspect") return void handleInspect(cmd.requestId, () => evalTS("inspectAe"), c);
   if (cmd.kind === "addProjectStatus" || cmd.kind === "versions") return;
+  if (cmd.kind === "openProject") {
+    return void handleOpenProject(cmd.requestId, cmd.path, (p) => evalTS("openProject", p), c).then(() => refreshState());
+  }
   if (cmd.kind === "saveAs") {
     return void handleSaveAs(cmd.requestId, cmd.path, (p) => evalTS("saveProjectAs", p), c).then(() => refreshState());
   }
@@ -126,9 +131,21 @@ async function onCommand(cmd: AppCommand) {
   return void (cmd.kind === "relink" ? doRelink(c) : doScan(c));
 }
 
-csi.addEventListener(PANEL_BEAT_EVENT, () => {
-  lastBeat = Date.now();
-  stop(); // react at once: the panel is about to connect
+csi.addEventListener(PANEL_BEAT_EVENT, (e: { data?: unknown }) => {
+  const now = Date.now();
+  lastBeat = now;
+  if (beatLinked(e?.data)) unlinkedSince = null;
+  else if (unlinkedSince === null) unlinkedSince = now;
+  // React at once when the panel holds the link or is about to; hold it while the panel has been stuck without one.
+  if (backgroundShouldConnect(now, lastBeat, unlinkedSince)) start();
+  else stop();
+});
+
+// The panel is closing: take the app link now rather than waiting for its beats to stop.
+csi.addEventListener(PANEL_BYE_EVENT, () => {
+  lastBeat = null;
+  unlinkedSince = null;
+  tick();
 });
 
 function stop() {
@@ -151,7 +168,7 @@ function start() {
 
 let n = 0;
 function tick() {
-  if (backgroundShouldConnect(Date.now(), lastBeat)) {
+  if (backgroundShouldConnect(Date.now(), lastBeat, unlinkedSince)) {
     start();
     if (++n % 2 === 0) void refreshState(); // every 4 s
   } else stop();

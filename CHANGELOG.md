@@ -4,6 +4,37 @@ What changed in each version of Murre. The newest is at the top.
 
 The version of the After Effects Companion is in brackets where it changed. Murre installs and updates the Companion itself.
 
+## 0.3.0 (2026-11-16)
+
+Companion 0.0.9.
+
+### New
+
+- **Murre To-do in After Effects.** A second panel (Window → Extensions → Murre To-do) shows the open project’s to-do list. Tick something off in After Effects and it’s ticked in Murre too.
+- **To-dos for files that aren’t in Murre.** They’re kept in a `.murre` folder next to the `.aep`, and they come along if you add the project to Murre later.
+- **Link previews on the Moodboard.** A link shows its picture, title and site. Referenxe is now called Moodboard.
+- **Update progress.** Checking, downloading (with a percentage) and installing each show while they happen, and the update dialog shows what’s new.
+
+### Changed
+
+- **Open in After Effects** waits for After Effects to start, then opens the project inside it. No more clicking twice.
+- Closing the Companion panel hands the link to Murre over straight away, so the app doesn’t show “not connected” for a few seconds.
+- `.aep` files inside `02 Assets` (templates, mostly) no longer show up as versions, unless you marked one as current.
+- Home: the date as the title, the greeting under it, and recent projects in a tidy grid.
+
+### Windows
+
+None of this has been tried on a real Windows PC with After Effects yet. Please tell us what breaks.
+
+- **The Companion connects.** If Windows says the panel closed when it didn’t, the panel connects again. If the panel still can’t get through, the hidden helper keeps Murre connected meanwhile.
+- **Open in After Effects** works, including starting After Effects first.
+- **Cancel** stops a render and everything it started.
+- Render thumbnails and details work without installing anything: Murre comes with FFmpeg for Windows.
+- **Package** makes a `.zip`.
+- Opening Murre while it’s already running shows the open window instead of starting a second copy.
+- The Companion’s Murre button starts Murre when it isn’t running.
+- Murre’s log notes when the Companion connects, disconnects or is turned away, and why.
+
 ## 0.2.0 (2026-11-07)
 
 Companion 0.0.7.

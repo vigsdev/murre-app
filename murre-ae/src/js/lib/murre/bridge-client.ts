@@ -24,6 +24,21 @@ export function bridgeFilePath(
   return null;
 }
 
+/** On Windows the app writes where it is installed next to the link file, so the panel can start it. */
+export const APP_LOCATION_FILE = "app-location.json";
+
+/** The Murre program from `app-location.json`: a full Windows path to an `.exe`, or null when the file isn't usable. */
+export function parseAppLocation(text: string): string | null {
+  try {
+    const v = JSON.parse(text);
+    if (!v || typeof v !== "object" || v.v !== 1 || typeof v.path !== "string") return null;
+    const path: string = v.path;
+    return /^[a-z]:\\.+\.exe$/i.test(path) && !/[\r\n"]/.test(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface BridgeInfo {
   port: number;
   token: string;
@@ -119,6 +134,13 @@ export interface RevealCommand {
   propertyPath: string;
 }
 
+/** Open this project file in After Effects (absolute path). */
+export interface OpenProjectCommand {
+  kind: "openProject";
+  requestId: string;
+  path: string;
+}
+
 export type AppCommand =
   | { kind: "scan"; projectId: string }
   | { kind: "relink"; projectId: string }
@@ -128,6 +150,7 @@ export type AppCommand =
   | ImportImageCommand
   | RevealCommand
   | SaveAsCommand
+  | OpenProjectCommand
   | AddProjectStatus
   | VersionsAnswer;
 
@@ -155,6 +178,9 @@ export function parseCommand(text: string): AppCommand | null {
         layerName: v.layerName.slice(0, 300),
         propertyPath: typeof v.propertyPath === "string" ? v.propertyPath.slice(0, 2000) : "",
       };
+    }
+    if (v.type === "openProject" && typeof v.requestId === "string" && v.requestId && typeof v.path === "string" && /\.aepx?$/i.test(v.path)) {
+      return { kind: "openProject", requestId: v.requestId, path: v.path };
     }
     if (v.type === "saveAs" && typeof v.requestId === "string" && v.requestId && typeof v.path === "string" && /\.aep$/i.test(v.path)) {
       return { kind: "saveAs", requestId: v.requestId, path: v.path };
@@ -315,6 +341,14 @@ export class BridgeClient {
   /** Bring the Murre app forward, optionally on this project with its Package window open. */
   sendShowApp(requestId: string, projectId: string | null, open: "package" | null = null): boolean {
     return this.write(JSON.stringify({ type: "showApp", requestId, projectId, open }));
+  }
+
+  sendOpenDone(requestId: string) {
+    this.write(JSON.stringify({ type: "openDone", requestId }));
+  }
+
+  sendOpenFailed(requestId: string, message: string, cancelled = false) {
+    this.write(JSON.stringify({ type: "openFailed", requestId, message: message.slice(0, 500), cancelled }));
   }
 
   sendImportDone(requestId: string, comp: string, created: boolean) {

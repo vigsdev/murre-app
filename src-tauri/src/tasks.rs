@@ -114,6 +114,35 @@ pub fn delete(root: &Path, id: &str) -> AppResult<Vec<Task>> {
     Ok(file.tasks)
 }
 
+/// The to-dos kept next to an After Effects file that wasn't in Murre (`<folder>/.murre/tasks.json`, written by the
+/// Companion's Murre To-do panel), added to the new project at `root` when that file becomes a Murre project.
+/// Nothing happens when the folder is itself a Murre project, has no list, or the list can't be read. Returns how many
+/// came along. The original list is left where it was.
+pub fn bring_along(from_folder: &Path, root: &Path) -> AppResult<usize> {
+    if from_folder.join(".murre").join("project.json").exists() {
+        return Ok(0);
+    }
+    let Ok(source) = load(from_folder) else { return Ok(0) };
+    if source.tasks.is_empty() {
+        return Ok(0);
+    }
+    let mut file = load(root)?;
+    let mut added = 0;
+    for t in source.tasks {
+        if file.tasks.len() >= MAX_TASKS {
+            break;
+        }
+        if !file.tasks.iter().any(|x| x.id == t.id) {
+            file.tasks.push(t);
+            added += 1;
+        }
+    }
+    if added > 0 {
+        store(root, &file)?;
+    }
+    Ok(added)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +152,33 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         fs::create_dir_all(d.path().join(".murre")).unwrap();
         d
+    }
+
+    #[test]
+    fn to_dos_next_to_a_loose_file_come_along_once() {
+        let loose = tempfile::tempdir().unwrap();
+        let root = project();
+        assert_eq!(bring_along(loose.path(), root.path()).unwrap(), 0, "no list, nothing to bring");
+        fs::create_dir_all(loose.path().join(".murre")).unwrap();
+        add(loose.path(), "Fix the logo").unwrap();
+        set_done(loose.path(), &list(loose.path()).unwrap()[0].id, true).unwrap();
+        add(loose.path(), "Render v2").unwrap();
+        add(root.path(), "Already here").unwrap();
+
+        assert_eq!(bring_along(loose.path(), root.path()).unwrap(), 2);
+        let titles: Vec<_> = list(root.path()).unwrap().into_iter().map(|t| (t.title, t.done)).collect();
+        assert_eq!(titles, vec![("Already here".into(), false), ("Fix the logo".into(), true), ("Render v2".into(), false)]);
+        assert_eq!(bring_along(loose.path(), root.path()).unwrap(), 0, "the same tasks aren't added twice");
+        assert_eq!(list(loose.path()).unwrap().len(), 2, "the original list stays");
+    }
+
+    #[test]
+    fn a_murre_project_folder_is_not_a_loose_list() {
+        let other = project();
+        fs::write(other.path().join(".murre/project.json"), "{}").unwrap();
+        add(other.path(), "Belongs to another project").unwrap();
+        let root = project();
+        assert_eq!(bring_along(other.path(), root.path()).unwrap(), 0);
     }
 
     #[test]

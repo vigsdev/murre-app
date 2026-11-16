@@ -14,7 +14,7 @@ const PAGE_ICON: Record<string, LucideIcon> = {
   "/projects/new": Plus,
   "/notes": FileText,
   "/calendar": Calendar,
-  "/referenxe": PenTool,
+  "/moodboard": PenTool,
   "/settings": Settings,
 }
 

@@ -9,11 +9,14 @@ export function ProjectTab({
   project,
   reloadToken = 0,
   needsToken = 0,
+  tasksToken = 0,
   openAe,
 }: {
   project: ProjectRecord
   reloadToken?: number
   needsToken?: number
+  /** Bumped when `tasks.json` changed on disk (the Murre To-do panel in After Effects). */
+  tasksToken?: number
   openAe: ReturnType<typeof useOpenInAfterEffects>
 }) {
   return (
@@ -24,7 +27,7 @@ export function ProjectTab({
         <NeedsCard projectId={project.id} reloadToken={needsToken} />
         <PremiereCard projectId={project.id} reloadToken={reloadToken} />
       </div>
-      <TaskList projectId={project.id} className="h-full" />
+      <TaskList projectId={project.id} reloadToken={tasksToken} className="h-full" />
     </div>
   )
 }

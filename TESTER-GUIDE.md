@@ -1,6 +1,6 @@
 # Murre: tester guide
 
-Thank you for trying Murre. It is a Mac app that keeps your After Effects projects organised, and it can now bring a Premiere Pro project and its footage along. This is an early build, so please read the safety notes first.
+Thank you for trying Murre. It is a Mac and Windows app that keeps your After Effects projects organised, and it can now bring a Premiere Pro project and its footage along. This is an early build, so please read the safety notes first.
 
 ## Is it safe?
 
@@ -10,16 +10,31 @@ Thank you for trying Murre. It is a Mac app that keeps your After Effects projec
 
 ## Install
 
+The app is not signed by Apple or Microsoft yet, so the first time you open it your computer warns you. You only need to get past this once.
+
+**On a Mac**
+
 1. Open the `.dmg` and drag **Murre** into **Applications**.
-2. The app is not signed yet, so macOS will say it cannot check it. Open Terminal and run this once:
+2. Open Murre. macOS says it cannot check it. Press **Done** (or **OK**).
+3. Open **System Settings → Privacy & Security** and scroll down. Next to "Murre was blocked", press **Open Anyway**, then confirm with your password or Touch ID.
 
-   ```
-   xattr -dr com.apple.quarantine /Applications/Murre.app
-   ```
+If macOS instead says Murre **"is damaged and can't be opened"**, run this once in Terminal, then open Murre again:
 
-   (Or right-click the app and choose **Open**, then **Open** again.)
-3. Open Murre and enter your name when it asks.
-4. Go to **Settings → Companion** and press **Install**. This puts a small panel into After Effects. **Quit and reopen After Effects** afterwards. The panel is under **Window → Extensions → Murre**.
+```
+xattr -dr com.apple.quarantine /Applications/Murre.app
+```
+
+**On Windows**
+
+1. Run the installer. A blue window says "Windows protected your PC".
+2. Press **More info**, then **Run anyway**.
+
+Your browser may also warn that the file "isn't commonly downloaded". Choose **Keep** (in Edge: **…** → **Keep** → **Show more** → **Keep anyway**).
+
+**Then**
+
+1. Open Murre and enter your name when it asks.
+2. Go to **Settings → Companion** and press **Install**. This puts a small panel into After Effects. **Quit and reopen After Effects** afterwards. The panel is under **Window → Extensions → Murre**.
 
 ## What to try
 

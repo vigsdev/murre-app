@@ -20,6 +20,10 @@ import { formatDeadline, isOverdue, statusLabel, todayIso } from "@/features/pro
 import { useProjectsChanged } from "@/features/sync/sync-context"
 import { api, errorMessage, type CalendarEvent, type ProjectRecord, type ProjectStatus } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
+import { Keyframe } from "@/components/keyframe"
+
+/** Every block on Home: the app's card surface (the same as `Card`), one radius and one hairline. */
+const SURFACE = "rounded-2xl bg-card ring-1 ring-foreground/8 dark:ring-border"
 
 const UPCOMING_DAYS = 14
 const LIST_LIMIT = 6
@@ -127,9 +131,9 @@ export function HomePage() {
 
   return (
     <>
-      <PageHeader hero title={greeting ?? " "} titleClassName="text-2xl" />
-      <div className="flex w-full min-w-0 flex-1 flex-col gap-6 px-6 pb-6 pt-1">
-        <p className="-mt-3 text-sm text-muted-foreground">{new Date().toLocaleDateString(undefined, { dateStyle: "full" })}</p>
+      {/* The day is the title; the greeting is Murre's voice, kept as a quiet line under it. */}
+      <PageHeader hero title={new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} subtitle={greeting ?? " "} />
+      <div className="flex w-full min-w-0 flex-1 flex-col gap-6 px-6 pt-2 pb-6">
 
         {load.status === "loading" && (
           <div className="grid gap-4 md:grid-cols-2">
@@ -176,14 +180,15 @@ export function HomePage() {
         {data && data.total > 0 && (
           <>
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem]">
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-3">
+              {/* Two by two, so the four tiles together are as tall as Coming up instead of each stretching to it. */}
+              <div className="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2">
               {data.lastOpened.map((p) => (
                 <Link
                   key={p.id}
                   to={`/projects/${p.id}`}
-                  className="flex min-w-0 items-center gap-3 rounded-2xl border p-2.5 transition-colors hover:bg-muted/50"
+                  className={cn(SURFACE, "flex min-w-0 items-center gap-3 p-2 transition-colors hover:bg-muted/40")}
                 >
-                  <ProjectCover projectId={p.id} name={p.name} available={p.available} className="size-12 shrink-0 rounded-xl" />
+                  <ProjectCover projectId={p.id} name={p.name} available={p.available} className="size-12 shrink-0 rounded-lg" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{p.name}</span>
                     <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
@@ -197,7 +202,8 @@ export function HomePage() {
               <ComingUp items={data.upcoming} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {/* One strip with hairlines between the figures, not four separate cards. */}
+            <div className={cn(SURFACE, "grid grid-cols-2 gap-px overflow-hidden bg-border lg:grid-cols-4")}>
               <Stat label="Projects" value={data.stats.total} hint={`${data.stats.completed} completed`} />
               <Stat label="Active" value={data.stats.active} hint="In progress, review or QC" />
               <Stat label="Due in 14 days" value={data.stats.dueSoon} hint="Not completed yet" />
@@ -218,7 +224,7 @@ const COMING_UP_SHOWN = 4
 
 function ComingUp({ items }: { items: UpcomingItem[] }) {
   return (
-    <section className="flex min-w-0 flex-col gap-2 rounded-2xl border p-3">
+    <section className={cn(SURFACE, "flex min-w-0 flex-col gap-3 p-4")}>
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-medium">Coming up</h2>
         <Link to="/calendar" className="text-xs text-muted-foreground underline-offset-4 hover:underline">
@@ -228,15 +234,22 @@ function ComingUp({ items }: { items: UpcomingItem[] }) {
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing in the next {UPCOMING_DAYS} days. That feels nice, doesn’t it?</p>
       ) : (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="flex flex-col gap-2">
           <AnimatePresence initial={false}>
             {items.slice(0, COMING_UP_SHOWN).map((u) => (
               <motion.li key={u.key} {...listItem} className="flex items-center gap-2 text-sm">
-                <span className={cn("w-[5.5rem] shrink-0 whitespace-nowrap text-xs text-muted-foreground", u.overdue && "font-medium text-destructive")}>
+                <span className={cn("w-22 shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground", u.overdue && "font-medium text-destructive")}>
                   {u.overdue ? "Overdue" : formatDeadline(u.date)}
                 </span>
+                {/* A deadline is a keyframe; an event is a plain dot. Same column either way. */}
+                <span className="flex w-3 shrink-0 justify-center">
+                  {u.kind === "deadline" ? (
+                    <Keyframe title="Deadline" className={u.overdue ? "text-destructive" : "text-muted-foreground"} />
+                  ) : (
+                    <span aria-hidden className="size-1.5 rounded-full bg-muted-foreground/60" />
+                  )}
+                </span>
                 <Link to={u.to ?? "/calendar"} className="min-w-0 flex-1 truncate underline-offset-4 hover:underline">
-                  {u.to ? "⚑ " : ""}
                   {u.label}
                 </Link>
               </motion.li>
@@ -250,9 +263,9 @@ function ComingUp({ items }: { items: UpcomingItem[] }) {
 
 function Stat({ label, value, hint, tone }: { label: string; value: number; hint: string; tone?: "bad" }) {
   return (
-    <div className="flex flex-col gap-1 rounded-2xl bg-card p-4 ring-1 ring-foreground/10">
+    <div className="flex flex-col gap-1 bg-card p-4">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn("text-3xl font-semibold tabular-nums", tone === "bad" && "text-destructive")}>{value}</span>
+      <span className={cn("text-3xl font-medium tabular-nums", tone === "bad" && "text-destructive")}>{value}</span>
       <span className="text-xs text-muted-foreground">{hint}</span>
     </div>
   )

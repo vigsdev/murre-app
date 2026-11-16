@@ -65,6 +65,9 @@ struct Slot {
     job: Option<JobSnapshot>,
     lines: VecDeque<String>,
     pid: Option<u32>,
+    /// Windows: the Job Object holding aerender and what it started, so cancel stops them all at once.
+    #[cfg(windows)]
+    win_job: Option<std::sync::Arc<win_job::Job>>,
     cancel_requested: bool,
     log: Option<LogFile>,
     last_emit: Option<Instant>,
@@ -278,6 +281,8 @@ impl Runner {
             *s = Slot {
                 job: Some(job.clone()),
                 pid: Some(child.id()),
+                #[cfg(windows)]
+                win_job: win_job::Job::for_child(&child).map(std::sync::Arc::new),
                 log: Some(LogFile { file, bytes: 0, capped: false }),
                 ..Default::default()
             };
@@ -410,6 +415,11 @@ impl Runner {
             }
             s.log = None;
             s.pid = None;
+            // Closing the job also stops anything aerender left behind.
+            #[cfg(windows)]
+            {
+                s.win_job = None;
+            }
         });
         if let Some(j) = self.current() {
             let how = if j.state == "finished" { "INFO" } else { "WARN" };
@@ -439,6 +449,11 @@ impl Runner {
             match (s.job.as_ref().map(|j| j.state.as_str()), s.pid) {
                 (Some("running"), Some(pid)) => {
                     s.cancel_requested = true;
+                    // aerender has no window to close politely on Windows, so stop the whole job straight away.
+                    #[cfg(windows)]
+                    if let Some(job) = s.win_job.clone() {
+                        job.stop();
+                    }
                     pid
                 }
                 _ => return Err(AppError::Invalid("No render running. Nothing to stop.".into())),
@@ -458,6 +473,67 @@ impl Runner {
             terminate(pid, true);
         });
         Ok(())
+    }
+}
+
+/// The Windows Job Object for a render. Every process aerender starts joins it, so stopping the job stops the whole
+/// render, and because it's set to kill on close, a render can't outlive Murre.
+#[cfg(windows)]
+mod win_job {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+    };
+
+    pub struct Job(HANDLE);
+
+    // SAFETY: a job handle is a kernel handle; Windows lets any thread use it.
+    unsafe impl Send for Job {}
+    unsafe impl Sync for Job {}
+
+    impl Job {
+        /// A new job holding `child`, or `None` if Windows refused (cancel then falls back to `taskkill`).
+        pub fn for_child(child: &std::process::Child) -> Option<Job> {
+            use std::os::windows::io::AsRawHandle;
+            // SAFETY: plain Win32 calls on a handle we own; `info` is a correctly sized, zeroed struct.
+            unsafe {
+                let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+                if job.is_null() {
+                    return None;
+                }
+                let job = Job(job);
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let set = SetInformationJobObject(
+                    job.0,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const core::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                if set == 0 || AssignProcessToJobObject(job.0, child.as_raw_handle() as HANDLE) == 0 {
+                    return None;
+                }
+                Some(job)
+            }
+        }
+
+        /// Stops every process in the job.
+        pub fn stop(&self) {
+            // SAFETY: the handle is open for as long as `self` lives.
+            unsafe {
+                TerminateJobObject(self.0, 1);
+            }
+        }
+    }
+
+    impl Drop for Job {
+        fn drop(&mut self) {
+            // SAFETY: closed once, here.
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
     }
 }
 

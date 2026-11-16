@@ -61,6 +61,10 @@ pub enum Stage {
     Creating { file: String },
     /// It hasn't answered for a while: probably a dialog.
     CreatingSlow { file: String },
+    /// After Effects is opening a project.
+    Opening { file: String },
+    /// Still opening: probably asking whether to save the project that was open.
+    OpeningSlow { file: String },
 }
 
 /// What to do while waiting for the Companion to connect.
@@ -94,6 +98,15 @@ pub fn create_wait(elapsed: Duration, file: &str) -> Stage {
         Stage::Creating { file: file.to_string() }
     } else {
         Stage::CreatingSlow { file: file.to_string() }
+    }
+}
+
+/// Opening a project: the same timing as creating one.
+pub fn open_wait(elapsed: Duration, file: &str) -> Stage {
+    if elapsed < CREATE_SLOW_AFTER {
+        Stage::Opening { file: file.to_string() }
+    } else {
+        Stage::OpeningSlow { file: file.to_string() }
     }
 }
 

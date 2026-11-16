@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BridgeClient,
   bridgeFilePath,
+  parseAppLocation,
   parseBridgeFile,
   parseCommand,
   type AppCommand,
@@ -290,5 +291,29 @@ describe("BridgeClient", () => {
     t.client.start();
     t.client.start();
     expect(t.sockets).toHaveLength(1);
+  });
+});
+
+describe("parseCommand: openProject", () => {
+  it("reads an .aep path and refuses anything else", () => {
+    expect(parseCommand(JSON.stringify({ v: 1, type: "openProject", requestId: "o1", path: "/p/Film.aep" }))).toEqual({ kind: "openProject", requestId: "o1", path: "/p/Film.aep" });
+    expect(parseCommand(JSON.stringify({ v: 1, type: "openProject", requestId: "o1", path: "/p/Film.mov" }))).toBeNull();
+    expect(parseCommand(JSON.stringify({ v: 1, type: "openProject", path: "/p/Film.aep" }))).toBeNull();
+  });
+});
+
+describe("parseAppLocation", () => {
+  it("accepts a full Windows path to an .exe", () => {
+    expect(parseAppLocation(JSON.stringify({ v: 1, path: "C:\\Users\\Me\\AppData\\Local\\Murre\\murre.exe" }))).toBe(
+      "C:\\Users\\Me\\AppData\\Local\\Murre\\murre.exe",
+    );
+  });
+
+  it("refuses anything else", () => {
+    expect(parseAppLocation("not json")).toBeNull();
+    expect(parseAppLocation(JSON.stringify({ v: 2, path: "C:\\Murre\\murre.exe" }))).toBeNull();
+    expect(parseAppLocation(JSON.stringify({ v: 1, path: "murre.exe" }))).toBeNull();
+    expect(parseAppLocation(JSON.stringify({ v: 1, path: "C:\\Murre\\run.bat" }))).toBeNull();
+    expect(parseAppLocation(JSON.stringify({ v: 1, path: "/Applications/Murre.app" }))).toBeNull();
   });
 });

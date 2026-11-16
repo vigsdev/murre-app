@@ -54,6 +54,8 @@ pub struct PanelState {
     pub last: Option<Outcome>,
     /// How the most recent "create the project file in After Effects" request ended.
     pub starter: Option<StarterOutcome>,
+    /// How the most recent "open this project in After Effects" request ended.
+    pub open: Option<OpenOutcome>,
     /// The answer to the most recent "what is open in After Effects?" question.
     pub inspect: Option<InspectOutcome>,
     /// How the most recent "send this image to After Effects" request ended.
@@ -148,6 +150,17 @@ pub struct InspectOutcome {
     pub kind: String,
     pub name: String,
     pub path: String,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenOutcome {
+    /// The request this answers.
+    pub request_id: String,
+    pub ok: bool,
+    /// The person pressed Cancel in After Effects' "save changes?" prompt, so nothing was opened.
+    pub cancelled: bool,
+    pub message: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
@@ -269,6 +282,15 @@ enum Incoming {
         request_id: String,
         message: String,
     },
+    OpenDone {
+        request_id: String,
+    },
+    OpenFailed {
+        request_id: String,
+        message: String,
+        #[serde(default)]
+        cancelled: bool,
+    },
     AddProject {
         request_id: String,
         name: String,
@@ -318,6 +340,8 @@ enum Outgoing {
     Cancel,
     /// Make a new project in After Effects and save it at the given path.
     CreateStarter(StarterSpec),
+    /// Open this `.aep` in After Effects (absolute path).
+    OpenProject { request_id: String, path: String },
     /// Ask what is open in After Effects.
     Inspect { request_id: String },
     /// Add an image to the active composition (or a new one).
@@ -342,6 +366,9 @@ impl Outgoing {
                 serde_json::json!({"v": PROTOCOL, "type": "relink", "projectId": project_id})
             }
             Outgoing::Cancel => serde_json::json!({"v": PROTOCOL, "type": "cancel"}),
+            Outgoing::OpenProject { request_id, path } => {
+                serde_json::json!({"v": PROTOCOL, "type": "openProject", "requestId": request_id, "path": path})
+            }
             Outgoing::CreateStarter(c) => serde_json::json!({
                 "v": PROTOCOL, "type": "createStarter", "requestId": c.request_id, "path": c.path,
                 "compName": c.comp_name, "width": c.width, "height": c.height,
@@ -707,6 +734,14 @@ impl Bridge {
     }
 
     /// Ask the Companion to create a new project in After Effects and save it at `spec.path`.
+    /// Ask the Companion to open `path` in After Effects. The answer arrives in `status().open`.
+    pub fn request_open_project(&self, request_id: &str, path: &str) -> AppResult<()> {
+        if self.status().scanning {
+            return Err(AppError::Invalid("The Companion is busy with a scan. Try again when it’s done.".into()));
+        }
+        self.send(Outgoing::OpenProject { request_id: request_id.to_string(), path: path.to_string() })
+    }
+
     pub fn request_create_starter(&self, spec: StarterSpec) -> AppResult<()> {
         if self.status().scanning {
             return Err(AppError::Invalid("The Companion is busy with a scan.".into()));
@@ -772,6 +807,17 @@ fn write_bridge_file(file: &Path, port: u16, token: &str) -> AppResult<()> {
     fs::rename(&tmp, file).map_err(|e| AppError::io(file, e))
 }
 
+/// Writes a line about the Companion link to the app log, skipping it when it repeats the line before: a panel that
+/// keeps retrying would otherwise fill the log with the same refusal.
+fn log_once(line: &str) {
+    static LAST: Mutex<String> = Mutex::new(String::new());
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if *last != line {
+        *last = line.to_string();
+        crate::applog::info("companion", line);
+    }
+}
+
 fn reject(status: StatusCode, why: &str) -> ErrorResponse {
     let mut r = ErrorResponse::new(Some(why.to_string()));
     *r.status_mut() = status;
@@ -827,8 +873,10 @@ fn serve(stream: TcpStream, shared: Arc<Shared>) {
         stream,
         move |req: &Request, resp: Response| {
             check_request(req, &token).map(|_| resp).inspect_err(|e| {
-                // Visible in the terminal when running `tauri dev`; never includes the token.
-                eprintln!("Companion link: refused a connection ({:?})", e.body());
+                // Never includes the token.
+                let why = e.body().clone().unwrap_or_default();
+                eprintln!("Companion link: refused a connection ({why})");
+                log_once(&format!("Refused a Companion connection: {why}"));
             })
         },
         Some(config),
@@ -844,6 +892,7 @@ fn serve(stream: TcpStream, shared: Arc<Shared>) {
     let mut rx: Option<mpsc::Receiver<Outgoing>> = None;
     let mut last_heard = Instant::now();
     let mut last_ping = Instant::now();
+    let mut who = String::new();
 
     'conn: loop {
         if id != 0 && !shared.alive(id) {
@@ -879,6 +928,10 @@ fn serve(stream: TcpStream, shared: Arc<Shared>) {
                         Incoming::State { v, source, host, host_label, .. } if *v == PROTOCOL => {
                             (source.clone(), host.clone(), host_label.clone())
                         }
+                        Incoming::State { v, .. } => {
+                            log_once(&format!("A Companion with link version {v} tried to connect; this app uses {PROTOCOL}."));
+                            break;
+                        }
                         _ => break,
                     };
                     let (tx, r) = mpsc::channel::<Outgoing>();
@@ -889,6 +942,8 @@ fn serve(stream: TcpStream, shared: Arc<Shared>) {
                     };
                     id = claimed;
                     rx = Some(r);
+                    who = format!("{} ({})", source.as_deref().unwrap_or("panel"), label.as_deref().unwrap_or("After Effects"));
+                    log_once(&format!("Companion connected: {who}"));
                 }
                 apply(&shared, id, msg);
             }
@@ -906,6 +961,7 @@ fn serve(stream: TcpStream, shared: Arc<Shared>) {
 
     // A connection that was replaced is already gone from the list; only a live one clears its entry.
     if id != 0 {
+        log_once(&format!("Companion disconnected: {who}"));
         shared.remove(id);
     }
     let _ = ws.close(None);
@@ -1045,6 +1101,12 @@ fn apply(shared: &Shared, id: u64, msg: Incoming) {
                 message: Some(message.chars().take(500).collect()),
                 previous: None,
             });
+        }
+        Incoming::OpenDone { request_id } => {
+            s.open = Some(OpenOutcome { request_id, ok: true, cancelled: false, message: None });
+        }
+        Incoming::OpenFailed { request_id, message, cancelled } => {
+            s.open = Some(OpenOutcome { request_id, ok: false, cancelled, message: Some(message.chars().take(500).collect()) });
         }
         Incoming::AddProject { request_id, name, parent_dir, versions } => {
             s.add_project = Some(AddProjectRequest { request_id, name, parent_dir, versions });
@@ -1593,6 +1655,15 @@ mod tests {
         wait(|| bridge.status().reveal.as_ref().map(|r| r.request_id == "v2").unwrap_or(false));
         assert!(!bridge.status().reveal.unwrap().ok);
         ws.send(Message::text(r#"{"type":"starterFailed","requestId":"r2","message":"nope"}"#)).unwrap();
+        bridge.request_open_project("o1", "/p/Film.aep").unwrap();
+        let got: serde_json::Value = serde_json::from_str(&read_text(&mut ws)).unwrap();
+        assert_eq!(got, serde_json::json!({"v": 1, "type": "openProject", "requestId": "o1", "path": "/p/Film.aep"}));
+        ws.send(Message::text(r#"{"type":"openFailed","requestId":"o1","message":"kept","cancelled":true}"#)).unwrap();
+        wait(|| bridge.status().open.is_some());
+        assert_eq!(
+            bridge.status().open.unwrap(),
+            OpenOutcome { request_id: "o1".into(), ok: false, cancelled: true, message: Some("kept".into()) }
+        );
         wait(|| bridge.status().starter.map(|r| r.request_id == "r2").unwrap_or(false));
         assert!(!bridge.status().starter.unwrap().ok);
     }

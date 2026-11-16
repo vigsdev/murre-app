@@ -21,7 +21,8 @@ const config: CEP_Config = {
   symlink: "local",
   port: 3000,
   servePort: 5000,
-  startingDebugPort: 8860,
+  // Remote-debugging ports for Chrome (localhost:8970 and up, one per panel). 8860 is the common default other extensions use too.
+  startingDebugPort: 8970,
   extensionManifestVersion: 6.0,
   requiredRuntimeVersion: 9.0,
   hosts: [
@@ -56,6 +57,15 @@ const config: CEP_Config = {
       startOnEvents: ["com.adobe.csxs.events.ApplicationInitialized"],
       width: 100,
       height: 100,
+    },
+    {
+      // Murre To-do: the open project's to-do list, the same one the Murre app shows (src/js/lib/murre/tasks.ts).
+      mainPath: "./todo/index.html",
+      name: "todo",
+      panelDisplayName: "Murre To-do",
+      autoVisible: true,
+      width: 320,
+      height: 480,
     },
     {
       // "Add this Project to Murre": a small popup asking for the project's name and folder (src/js/lib/murre/add-dialog.ts).

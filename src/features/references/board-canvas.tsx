@@ -12,6 +12,7 @@ import {
   Copy,
   ExternalLink,
   FileText,
+  ImageDown,
   ImageOff,
   Link2,
   Maximize,
@@ -304,11 +305,47 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
     addItems(made.map((m, i) => ({ ...m, ...spots[i] })))
   }
 
+  /**
+   * Fills in a card after the fact (a link's preview arriving) without a step of its own in undo: undoing the add
+   * still removes the whole card. Nothing happens if the card was deleted meanwhile.
+   */
+  const enrich = (id: string, patch: Partial<Item>) => {
+    if (readOnly || !itemsRef.current.some((i) => i.id === id)) return
+    const next = itemsRef.current.map((i) => (i.id === id ? { ...i, ...patch } : i))
+    setLive(next)
+    onChange({ format: BOARD_FORMAT, version: 1, items: next, view: viewRef.current })
+  }
+
   const addLink = (raw: string) => {
     const url = normalizeUrl(raw)
     if (!url || readOnly) return
     const c = viewportCenter()
-    addItems([{ id: newId(), type: "link", x: c.x - 140, y: c.y - 36, w: 280, h: 72, url }])
+    const id = newId()
+    addItems([{ id, type: "link", x: c.x - 140, y: c.y - 36, w: LINK_W, h: LINK_H, url }])
+    void loadPreview(id, url, false)
+  }
+
+  /**
+   * Fetches a link's title and picture (once) and turns its card into a preview card. A page with no preview keeps
+   * the plain card; `say` reports that, for when someone asked from the toolbar.
+   */
+  const loadPreview = async (id: string, url: string, say: boolean) => {
+    try {
+      const p = await api.fetchLinkPreview(projectId, url)
+      const patch: Partial<Item> = { title: p.title ?? undefined, site: p.site ?? undefined }
+      if (p.file) {
+        const size = await imageSize(projectId, p.file)
+        const ratio = size ? Math.min(Math.max(size.h / size.w, 0.4), 1.6) : 0.6
+        // Grows downwards from the card's top left corner, at the card's current width.
+        const w = itemsRef.current.find((i) => i.id === id)?.w ?? LINK_W
+        Object.assign(patch, { file: p.file, h: Math.round(w * ratio) + LINK_H })
+      } else if (say) {
+        toast.message("That page doesn’t offer a preview picture.")
+      }
+      enrich(id, patch)
+    } catch (e) {
+      if (say) toast.error(errorMessage(e))
+    }
   }
 
   const addText = (at?: { x: number; y: number }, text = "") => {
@@ -991,6 +1028,9 @@ export function BoardCanvas({ projectId, initial, readOnly = false, onChange, on
           {only && (only.type === "pdf" || only.type === "link") && (
             <Tool label={only.type === "pdf" ? "Open PDF" : "Open link"} onClick={() => openItem(only)}><ExternalLink /></Tool>
           )}
+          {only && only.type === "link" && !only.file && only.url && !readOnly && (
+            <Tool label="Get preview" onClick={() => void loadPreview(only.id, only.url!, true)}><ImageDown /></Tool>
+          )}
           {selected.every(isShape) && <ShapeStyle shapes={selected} onChange={(patch) => apply(itemsRef.current.map((i) => (selRef.current.has(i.id) && isShape(i) ? { ...i, ...patch } : i)))} />}
           <Tool label="Bring to front" onClick={() => apply(reorder(itemsRef.current, selRef.current, "front"))}><BringToFront /></Tool>
           <Tool label="Send to back" onClick={() => apply(reorder(itemsRef.current, selRef.current, "back"))}><SendToBack /></Tool>
@@ -1066,15 +1106,30 @@ const ItemView = memo(function ItemView({ item, projectId, editing, selected, on
           </div>
         </div>
       )}
-      {item.type === "link" && (
-        <div className="pointer-events-none flex size-full items-center gap-3 rounded-lg border bg-card px-4 text-card-foreground">
-          <Link2 className="size-5 shrink-0 text-muted-foreground" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{hostOf(item.url)}</p>
-            <p className="truncate text-xs text-muted-foreground">{item.url}</p>
+      {item.type === "link" &&
+        (item.file ? (
+          // A preview card: the page's picture, then its title and site, like a pin.
+          <div className="pointer-events-none flex size-full flex-col overflow-hidden rounded-lg border bg-card text-card-foreground">
+            <div className="min-h-0 flex-1">
+              <Media projectId={projectId} file={item.file} video={false} cover />
+            </div>
+            <div className="flex shrink-0 items-center gap-2.5 px-3" style={{ height: LINK_H }}>
+              <Link2 className="size-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{item.title ?? hostOf(item.url)}</p>
+                <p className="truncate text-xs text-muted-foreground">{item.site ?? hostOf(item.url)}</p>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="pointer-events-none flex size-full items-center gap-3 rounded-lg border bg-card px-4 text-card-foreground">
+            <Link2 className="size-5 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{item.title ?? hostOf(item.url)}</p>
+              <p className="truncate text-xs text-muted-foreground">{item.title ? (item.site ?? hostOf(item.url)) : item.url}</p>
+            </div>
+          </div>
+        ))}
     </div>
   )
 })
@@ -1087,7 +1142,26 @@ function hostOf(url?: string) {
   }
 }
 
-function Media({ projectId, file, video }: { projectId: string | null; file: string; video: boolean }) {
+/** A link card's width and the height of its text row (the whole card when there's no picture). */
+const LINK_W = 280
+const LINK_H = 72
+
+/** The natural size of a picture already in the board's media folder. */
+function imageSize(projectId: string | null, file: string): Promise<{ w: number; h: number } | null> {
+  return mediaUrl(projectId, file).then(
+    (src) =>
+      new Promise((resolve) => {
+        const img = new Image()
+        img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight > 0 ? { w: img.naturalWidth, h: img.naturalHeight } : null)
+        img.onerror = () => resolve(null)
+        img.src = src
+      }),
+    () => null,
+  )
+}
+
+/** `cover`: fill the box and crop (a link's picture), instead of stretching to it. */
+function Media({ projectId, file, video, cover = false }: { projectId: string | null; file: string; video: boolean; cover?: boolean }) {
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
@@ -1110,7 +1184,7 @@ function Media({ projectId, file, video }: { projectId: string | null; file: str
     // No play control yet: a video shows its first frame.
     <video src={`${src}#t=0.1`} muted preload="metadata" onError={() => setFailed(true)} className="pointer-events-none size-full rounded-sm object-fill" />
   ) : (
-    <img src={src} alt="" draggable={false} onError={() => setFailed(true)} className="pointer-events-none size-full rounded-sm object-fill" />
+    <img src={src} alt="" draggable={false} onError={() => setFailed(true)} className={cn("pointer-events-none size-full", cover ? "object-cover" : "rounded-sm object-fill")} />
   )
 }
 

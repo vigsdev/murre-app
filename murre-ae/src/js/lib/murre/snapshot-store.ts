@@ -6,7 +6,7 @@ import { SUPPORTED_SCHEMA } from "./project-link";
  * and the Companion only changes the two settings its right-click menu shows (see settings.ts). `folders.json` is the same:
  * the app writes it when it creates the project, and the Companion only reads it (see folder-rules.ts).
  */
-export type SnapshotFile = "colors.json" | "expressions.json" | "fonts.json" | "environment.json" | "comps.json" | "assets.json" | "settings.json" | "folders.json";
+export type SnapshotFile = "colors.json" | "expressions.json" | "fonts.json" | "environment.json" | "comps.json" | "assets.json" | "settings.json" | "folders.json" | "tasks.json";
 
 let tmpCounter = 0;
 

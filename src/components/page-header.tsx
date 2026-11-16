@@ -22,6 +22,7 @@ export function PageHeader({
   end,
   titleClassName,
   titleNode,
+  subtitle,
 }: {
   title: string
   actions?: React.ReactNode
@@ -32,12 +33,14 @@ export function PageHeader({
   titleClassName?: string
   /** Replaces the title with an editable one. It should be the same size as the text it replaces. */
   titleNode?: React.ReactNode
+  /** Hero only: a quiet line under the title. */
+  subtitle?: React.ReactNode
 }) {
   const toolbar = start !== undefined || end !== undefined
   return (
     <header
       data-tauri-drag-region
-      className={cn("box-content flex shrink-0 items-center gap-2 px-4 pt-(--tabstrip-h)", hero ? "relative h-16 px-6" : toolbar ? "h-14 px-6" : "h-12 border-b")}
+      className={cn("box-content flex shrink-0 items-center gap-2 px-4 pt-(--tabstrip-h)", hero ? cn("relative px-6", subtitle ? "h-20" : "h-16") : toolbar ? "h-14 px-6" : "h-12 border-b")}
     >
       {toolbar ? (
         <>
@@ -49,9 +52,12 @@ export function PageHeader({
           {titleNode ? (
             <h1 className="min-w-0 flex-1">{titleNode}</h1>
           ) : (
-          <h1 title={title} className={cn("min-w-0 truncate", hero ? "text-3xl font-semibold tracking-tight" : "text-sm font-medium", titleClassName)}>
-            {title}
-          </h1>
+          <div className="flex min-w-0 flex-col gap-1">
+            <h1 title={title} className={cn("min-w-0 truncate", hero ? "text-3xl font-semibold tracking-tight" : "text-sm font-medium", titleClassName)}>
+              {title}
+            </h1>
+            {hero && subtitle && <p className="truncate text-sm text-muted-foreground">{subtitle}</p>}
+          </div>
           )}
           {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
         </>

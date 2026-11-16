@@ -45,6 +45,19 @@ fn version_in(dir: &Path) -> Option<String> {
     read_version(&fs::read_to_string(dir.join("CSXS").join("manifest.xml")).ok()?)
 }
 
+/// The first Companion that can open a project when the app asks (`openProject`).
+const OPENS_PROJECTS_FROM: (u32, u32, u32) = (0, 0, 8);
+
+fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
+    let mut it = v.trim().split('.').map(|p| p.parse::<u32>().ok());
+    Some((it.next()??, it.next().flatten().unwrap_or(0), it.next().flatten().unwrap_or(0)))
+}
+
+/// Whether the Companion installed at `target` can open projects itself. Older ones ignore the request.
+pub fn opens_projects(target: &Path) -> bool {
+    version_in(target).as_deref().and_then(parse_version).is_some_and(|v| v >= OPENS_PROJECTS_FROM)
+}
+
 /// Where the Companion goes for this user. `roaming` is the roaming app data folder (`%APPDATA%`), used on Windows.
 pub fn target_dir(home: &Path, roaming: &Path) -> PathBuf {
     let extensions = if cfg!(windows) {
@@ -291,6 +304,24 @@ pub fn disable_debug_mode() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_new_enough_companions_open_projects() {
+        let d = tempfile::tempdir().unwrap();
+        let write = |v: &str| {
+            fs::create_dir_all(d.path().join("CSXS")).unwrap();
+            fs::write(d.path().join("CSXS/manifest.xml"), format!("<ExtensionManifest ExtensionBundleVersion=\"{v}\">")).unwrap();
+        };
+        assert!(!opens_projects(d.path()), "nothing installed");
+        write("0.0.7");
+        assert!(!opens_projects(d.path()));
+        write("0.0.8");
+        assert!(opens_projects(d.path()));
+        write("0.1");
+        assert!(opens_projects(d.path()));
+        write("junk");
+        assert!(!opens_projects(d.path()));
+    }
 
     #[test]
     fn reads_the_debug_setting_output() {

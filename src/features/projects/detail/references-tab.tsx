@@ -58,7 +58,7 @@ function readCanvas(canvas: Record<string, unknown> | null): { board: Board; uns
     : { board: emptyBoard(), unsupported: true, converted: false, dropped: 0 }
 }
 
-/** `fill` makes the board use all the height its parent offers (the app-wide Referenxe page). */
+/** `fill` makes the board use all the height its parent offers (the app-wide Moodboard page). */
 export function ReferencesTab({ projectId, fill = false }: { projectId: string | null; fill?: boolean }) {
   const [load, setLoad] = useState<Load>({ status: "loading" })
   const [save, setSave] = useState<SaveState>({ kind: "saved", at: null })

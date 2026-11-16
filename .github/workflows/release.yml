@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       id: ${{ steps.release.outputs.id }}
+      notes: ${{ steps.release.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
 
@@ -58,6 +59,12 @@ jobs:
             -F draft=true -F prerelease=false \
             --jq .id)
           echo "id=$id" >> "$GITHUB_OUTPUT"
+          # The same text goes into latest.json, which is what the update dialog shows.
+          {
+            echo "notes<<MURRE_NOTES_END"
+            cat "$RUNNER_TEMP/notes.md"
+            echo "MURRE_NOTES_END"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     needs: create-release
@@ -91,18 +98,32 @@ jobs:
           workspaces: src-tauri
 
       # FFmpeg isn't in git. Building it takes a few minutes, so keep the result until the script changes.
-      # Windows has no FFmpeg build yet: its installer ships stand-ins, and the app says its media tool is missing.
       - name: Cache FFmpeg
-        if: matrix.name == 'mac'
         id: ffmpeg-cache
         uses: actions/cache@v4
         with:
           path: src-tauri/binaries
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/make-ffmpeg.sh') }}
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(matrix.name == 'mac' && 'scripts/make-ffmpeg.sh' || 'scripts/make-ffmpeg-windows.sh') }}
 
       - name: Build FFmpeg
         if: matrix.name == 'mac' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         run: scripts/make-ffmpeg.sh
+
+      # Windows: the same LGPL build, made with the MinGW-w64 compiler inside MSYS2 (only on the build machine).
+      - name: Set up MSYS2 for FFmpeg
+        if: matrix.name == 'windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make diffutils tar xz curl
+            mingw-w64-x86_64-gcc mingw-w64-x86_64-nasm
+
+      - name: Build FFmpeg (Windows)
+        if: matrix.name == 'windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: scripts/make-ffmpeg-windows.sh
 
       - name: Install packages
         run: npm ci
@@ -119,6 +140,8 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.id }}
           # Still needed with releaseId, so the updater's download links point at this version's files.
           tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          # Becomes the notes in latest.json, shown in the update dialog. (The release page has them already.)
+          releaseBody: ${{ needs.create-release.outputs.notes }}
           releaseDraft: true
           prerelease: false
           # latest.json's plain "windows-x86_64" entry points at the NSIS installer (.exe), the only Windows bundle.

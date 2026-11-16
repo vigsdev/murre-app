@@ -1,0 +1,87 @@
+// Murre To-do: the same dark look as the Murre panel.
+html,
+body {
+  margin: 0;
+  background: #1e1e1e;
+  color: #f5f5f5;
+}
+
+.todo {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-family: var(--mantine-font-family);
+  font-size: var(--mantine-font-size-sm);
+}
+
+.todo-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 4px 4px 8px;
+  border-radius: 8px;
+
+  &:hover {
+    background: rgb(255 255 255 / 0.04);
+  }
+  .mantine-Checkbox-root {
+    flex: 1;
+    min-width: 0;
+  }
+  .mantine-Checkbox-body {
+    align-items: center;
+  }
+  &[data-done] .row-label {
+    color: rgb(245 245 245 / 0.45);
+    text-decoration: line-through;
+  }
+}
+
+.row-label {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.row-delete {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(245 245 245 / 0.5);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms, background-color 120ms;
+
+  .row:hover &,
+  &:focus-visible {
+    opacity: 1;
+  }
+  &:hover {
+    background: rgb(255 255 255 / 0.08);
+    color: #f5f5f5;
+  }
+}

@@ -15,6 +15,7 @@ import { FolderSetupEditor } from "@/features/settings/folder-setup"
 import { CompanionInstallCard, useCompanionInstall } from "@/features/companion/companion-install"
 import { CalendarSyncRows, useCalendarSync } from "@/features/settings/calendar-sync"
 import { isMac } from "@/lib/platform"
+import { useUpdateProgress } from "@/features/updates/use-update-progress"
 import { useProfile, useProfileContext } from "@/features/profile/profile-context"
 import { prepareAvatar } from "@/lib/image"
 import { ACCENTS, useAccent, useFontPreviews, useTranslucent } from "@/lib/preferences"
@@ -452,6 +453,17 @@ type State =
   | { status: "error"; message: string }
   | { status: "ready"; info: AppInfo }
 
+/** "Check for updates", which shows what the updater is doing instead of a button that seems to do nothing. */
+function CheckForUpdatesButton() {
+  const progress = useUpdateProgress()
+  const busy = progress.stage !== "idle"
+  return (
+    <Button variant="outline" size="sm" disabled={busy} onClick={() => void api.checkForUpdates().catch((e) => toast.error(errorMessage(e)))}>
+      {progress.stage === "checking" ? "Checking…" : progress.stage === "downloading" ? "Downloading…" : progress.stage === "installing" ? "Installing…" : "Check for updates"}
+    </Button>
+  )
+}
+
 export function SettingsPage() {
   const [state, setState] = useState<State>({ status: "loading" })
 
@@ -537,9 +549,7 @@ export function SettingsPage() {
                   <span className="text-sm">{state.info.version}</span>
                 </Row>
                 <Row title="Updates" description="Murre also checks once a day while it’s open.">
-                  <Button variant="outline" size="sm" onClick={() => void api.checkForUpdates()}>
-                    Check for updates
-                  </Button>
+                  <CheckForUpdatesButton />
                 </Row>
                 <Row title="Data folder" description="Your profile, project list and global notes live here." stack>
                   <span className="block break-all font-mono text-xs text-muted-foreground">{state.info.dataDir}</span>
