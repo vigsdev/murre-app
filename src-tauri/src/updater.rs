@@ -111,10 +111,19 @@ fn prompt_text(version: &str, notes: Option<&str>) -> String {
 /// Where the full error ends up, for the messages below.
 const DETAILS: &str = "If it keeps happening, Settings → About → Copy report has the details.";
 
+/// GitHub turned the request away (403 or 429): it limits how often one connection may ask, so waiting fixes it.
+fn refused(e: &tauri_plugin_updater::Error) -> bool {
+    let text = e.to_string();
+    text.contains("403") || text.contains("429")
+}
+
+const REFUSED: &str = "GitHub is limiting downloads from your connection right now. Wait an hour, then try again.";
+
 /// What a failed check says. The raw error goes to the log; people get a plain sentence.
 fn check_failed_text(e: &tauri_plugin_updater::Error, current: &str) -> String {
     use tauri_plugin_updater::Error as E;
     match e {
+        _ if refused(e) => format!("{REFUSED} You have Murre {current}."),
         // Every address answered without an update file: none is published yet, or the site is having a moment.
         E::ReleaseNotFound => format!("Couldn’t find a newer Murre online. You have Murre {current}.\n\nIf you were expecting an update, try again later."),
         E::Reqwest(_) | E::Network(_) => "Couldn’t reach the update server. Check your internet connection, then try again.".into(),
@@ -128,6 +137,7 @@ fn check_failed_text(e: &tauri_plugin_updater::Error, current: &str) -> String {
 fn install_failed_text(e: &tauri_plugin_updater::Error) -> String {
     use tauri_plugin_updater::Error as E;
     let reason = match e {
+        _ if refused(e) => REFUSED.to_string(),
         E::Reqwest(_) | E::Network(_) => "The download stopped. Check your internet connection, then try again.".to_string(),
         E::Minisign(_) | E::Base64(_) | E::SignatureUtf8(_) => {
             "The download didn’t pass Murre’s safety check, so it wasn’t installed.".to_string()
@@ -313,6 +323,9 @@ mod tests {
         let bad_sig = install_failed_text(&E::SignatureUtf8("x".into()));
         assert!(bad_sig.starts_with("The update didn’t install. Your current Murre is untouched.") && bad_sig.contains("safety check"));
         assert!(install_failed_text(&E::Network("reset".into())).contains("download stopped"));
+        let refused = E::Network("Download request failed with status: 403 Forbidden".into());
+        assert!(install_failed_text(&refused).contains("limiting downloads"));
+        assert!(check_failed_text(&refused, "0.3.0").contains("limiting downloads"));
     }
 
     #[test]

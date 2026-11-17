@@ -173,3 +173,28 @@ jobs:
             fi
           done
           echo "latest.json lists darwin-aarch64 and windows-x86_64."
+
+      # tauri-action points the updater at API links (api.github.com/.../releases/assets/<id>). Without signing in,
+      # GitHub's API allows 60 requests an hour per connection, so on a busy network the download fails with
+      # "403 Forbidden". The ordinary download links have no such limit: swap them in and upload latest.json again.
+      - name: Use plain download links in latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.id }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" --jq 'map({(.url): .name}) | add' > names.json
+          jq --slurpfile names names.json \
+             --arg base "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/" '
+            .platforms |= with_entries(
+              .value.url as $u
+              | ($names[0][$u] // null) as $n
+              | if $n then .value.url = ($base + ($n | @uri)) else . end)' latest.json > latest.fixed.json
+          if jq -e '[.platforms[].url | select(startswith("https://api.github.com/"))] | length > 0' latest.fixed.json > /dev/null; then
+            echo "::error::Some updater links still point at the GitHub API."
+            cat latest.fixed.json
+            exit 1
+          fi
+          mv latest.fixed.json latest.json
+          cat latest.json
+          gh release upload "$TAG" latest.json --clobber --repo "$GITHUB_REPOSITORY"
